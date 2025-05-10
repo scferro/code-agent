@@ -10,63 +10,90 @@ def get_file_tools(project_context):
     perm_manager = PermissionManager()
     
     @tool
-    def list_files(directory="."):
-        """List files in a directory. Use this to explore the project structure."""
+    def list_files(directory=".", recursive=True, max_depth=3):
+        """List files in a directory. Use this to explore the project structure.
+
+        Args:
+            directory: The directory to list
+            recursive: Whether to include files in subdirectories (default True)
+            max_depth: Maximum depth to recursively list (default 3)
+        """
         dir_path = project_context.project_dir / directory
-        
+
         try:
             # Check if directory exists
             if not dir_path.exists():
                 return f"Error: Directory '{directory}' does not exist"
-                
+
             if not dir_path.is_dir():
                 return f"Error: '{directory}' is not a directory"
-                
-            # Get directory contents
-            items = list(dir_path.iterdir())
-            
-            # Sort directories first, then files
-            items.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
-            
+
             # Format output
             result = [f"Directory: {directory}"]
-            
+
             # Group by type
             directories = []
             files = []
-            
-            for item in items:
-                rel_path = item.relative_to(project_context.project_dir)
-                
-                if item.is_dir():
-                    # Skip hidden directories
-                    if item.name.startswith("."):
-                        continue
-                    directories.append(f"📁 {rel_path}/")
-                else:
-                    # Skip hidden files
-                    if item.name.startswith("."):
-                        continue
-                        
-                    # Add file size
-                    size_kb = item.stat().st_size / 1024
-                    if size_kb < 1:
-                        size_str = f"{item.stat().st_size} bytes"
-                    else:
-                        size_str = f"{size_kb:.1f} KB"
-                    
-                    files.append(f"📄 {rel_path} ({size_str})")
-            
-            # Add counts
+
+            # Function to recursively collect files with path depth tracking
+            def collect_items(path, current_depth=0):
+                if current_depth > max_depth:
+                    return
+
+                try:
+                    # Get directory contents
+                    items = list(path.iterdir())
+
+                    # Sort directories first, then files
+                    items.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
+
+                    for item in items:
+                        # Calculate relative path from project root
+                        rel_path = item.relative_to(project_context.project_dir)
+
+                        if item.is_dir():
+                            # Skip hidden directories
+                            if item.name.startswith("."):
+                                continue
+
+                            # Add directory to list
+                            indent = "  " * current_depth
+                            directories.append(f"{indent}📁 {rel_path}/")
+
+                            # Recursively process subdirectory if recursive flag is set
+                            if recursive:
+                                collect_items(item, current_depth + 1)
+                        else:
+                            # Skip hidden files
+                            if item.name.startswith("."):
+                                continue
+
+                            # Add file size
+                            size_kb = item.stat().st_size / 1024
+                            if size_kb < 1:
+                                size_str = f"{item.stat().st_size} bytes"
+                            else:
+                                size_str = f"{size_kb:.1f} KB"
+
+                            # Add indent based on depth
+                            indent = "  " * current_depth
+                            files.append(f"{indent}📄 {rel_path} ({size_str})")
+                except Exception as e:
+                    files.append(f"Error accessing {path}: {str(e)}")
+
+            # Start collection from the root directory
+            collect_items(dir_path)
+
+            # Add counts and items to result
             result.append(f"\nDirectories ({len(directories)}):")
             result.extend(directories)
-            
+
             result.append(f"\nFiles ({len(files)}):")
             result.extend(files)
-            
+
             # Track that this directory has been explored
             project_context.track_dir_exploration(directory)
-            
+
             return "\n".join(result)
         except Exception as e:
             return f"Error listing directory: {e}"

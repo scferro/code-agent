@@ -55,9 +55,19 @@ class JsonResponseParser:
                 # For write_file, handle the pipe-separated format
                 if action == 'write_file' and isinstance(action_input, str):
                     params = {'file_path_content': action_input}
-                # For list_files, handle the directory parameter
+                # For list_files, handle the directory and recursive parameters
                 elif action == 'list_files' and isinstance(action_input, str):
-                    params = {'directory': action_input}
+                    # Check if it's a simple directory string or contains additional parameters
+                    if action_input.startswith("{") and action_input.endswith("}"):
+                        try:
+                            # Try to parse as JSON
+                            list_files_params = json.loads(action_input)
+                            params = list_files_params
+                        except:
+                            # Fallback to assuming it's just a directory path
+                            params = {'directory': action_input}
+                    else:
+                        params = {'directory': action_input}
                 # For read_file, handle the file_path parameter
                 elif action == 'read_file' and isinstance(action_input, str):
                     params = {'file_path': action_input}

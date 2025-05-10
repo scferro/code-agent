@@ -29,8 +29,8 @@ Available tools and their parameters:
 1. respond - Use this when you want to communicate directly with the user
    - parameters: {{ "message": "Your message to the user" }}
 
-2. list_files - List files in a directory
-   - parameters: {{ "directory": "path/to/dir" }}
+2. list_files - List files in a directory and its subdirectories
+   - parameters: {{ "directory": "path/to/dir", "recursive": true, "max_depth": 3 }}
 
 3. read_file - Read the contents of a file
    - parameters: {{ "file_path": "path/to/file" }}
