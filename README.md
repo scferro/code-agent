@@ -166,12 +166,18 @@ Edit the generated `.agent.md` file to include:
 - Common commands
 - Key file descriptions
 
-### Verbose Mode
+### Verbose and Debug Modes
 
-Enable verbose mode for detailed output:
+Enable verbose mode for additional information about the model output:
 
 ```bash
 codeagent chat --verbose
+```
+
+Enable debug mode even more information about the model output and agent status:
+
+```bash
+codeagent chat --debug
 ```
 
 ## License

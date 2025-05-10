@@ -217,24 +217,8 @@ def get_file_tools(project_context):
         # This tool simply returns the message, which will be displayed to the user
         return message
 
-    # Debug the tools before returning them
-    print("\n=========== TOOL CREATION DEBUG ===========")
-
+    # Create the tools list
     tools = [list_files, read_file, search_code, write_file, respond]
-
-    for i, t in enumerate(tools):
-        print(f"Tool {i}: {t.__name__ if hasattr(t, '__name__') else t}")
-        print(f"Type: {type(t)}")
-        print(f"Dir: {dir(t)[:10]}...")  # Just show first 10 attributes to keep output readable
-        print(f"Callable: {callable(t)}")
-        print(f"Has run: {hasattr(t, 'run')}")
-        print(f"Has invoke: {hasattr(t, 'invoke')}")
-        print(f"Has func: {hasattr(t, 'func')}")
-        print(f"Has coroutine: {hasattr(t, 'coroutine')}")
-        print(f"Has stop: {hasattr(t, 'stop')}")
-        print("---")
-
-    print("=====================================\n")
 
     # Return all tools - use the standard @tool decorated function
     return tools

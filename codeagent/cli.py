@@ -109,15 +109,16 @@ Your specific environment settings.
 @click.option("--project-dir", "-p", type=click.Path(exists=True, file_okay=False), default=".")
 @click.option("--model", "-m", help="Ollama model to use", default="codellama:7b-instruct")
 @click.option("--verbose/--quiet", "-v/-q", default=False, help="Show detailed processing logs")
-def task(task_description, project_dir, model, verbose):
+@click.option("--debug", is_flag=True, default=False, help="Enable debug output")
+def task(task_description, project_dir, model, verbose, debug):
     """Execute a coding task"""
     project_path = Path(project_dir).absolute()
     console.print(f"Working in [bold]{project_path}[/bold]")
     console.print(f"Task: [italic]{task_description}[/italic]")
-    
+
     # Initialize agent
     console.print("[bold yellow]Initializing agent...[/bold yellow]")
-    agent = CodeAgent(project_dir, model_name=model, verbose=verbose)
+    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug)
     
     # Process task
     console.print("[bold yellow]Thinking...[/bold yellow]")
@@ -156,14 +157,15 @@ def task(task_description, project_dir, model, verbose):
 @click.option("--project-dir", "-p", type=click.Path(exists=True, file_okay=False), default=".")
 @click.option("--model", "-m", help="Ollama model to use", default="codellama:7b-instruct")
 @click.option("--verbose/--quiet", "-v/-q", default=False, help="Show detailed processing logs")
-def chat(project_dir, model, verbose):
+@click.option("--debug", is_flag=True, default=False, help="Enable debug output")
+def chat(project_dir, model, verbose, debug):
     """Start an interactive chat session"""
     project_path = Path(project_dir).absolute()
     console.print(f"Starting chat session in [bold]{project_path}[/bold]")
-    
+
     # Initialize agent
     console.print("[bold yellow]Initializing agent...[/bold yellow]")
-    agent = CodeAgent(project_dir, model_name=model, verbose=verbose)
+    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug)
     
     # Start chat loop
     console.print("[bold green]Chat session started. Type 'exit' to quit.[/bold green]")

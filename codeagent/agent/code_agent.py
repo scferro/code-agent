@@ -28,11 +28,12 @@ console = Console()
 
 class CodeAgent:
     """Main agent class that orchestrates the coding assistant"""
-    
-    def __init__(self, project_dir=".", model_name="gemma3:12b", verbose=True):
+
+    def __init__(self, project_dir=".", model_name="gemma3:12b", verbose=True, debug=False):
         self.project_dir = Path(project_dir).absolute()
         self.model_name = model_name
         self.verbose = verbose
+        self.debug = debug
         self.tool_callback = None
 
         # Initialize context
@@ -46,7 +47,10 @@ class CodeAgent:
             model=model_name,
             temperature=0.5,
             format="json",
-            verbose=verbose
+            verbose=verbose,
+            num_predict=-2,
+            cache=False,
+            num_ctx=32768
         )
 
         # Set up memory
@@ -84,16 +88,17 @@ class CodeAgent:
             self.tools = []
 
         # Debug tools before creating agent
-        print("\n=========== TOOLS IN AGENT INIT ===========")
-        print(f"Total tools: {len(self.tools)}")
-        for i, t in enumerate(self.tools):
-            print(f"Tool {i}: {getattr(t, 'name', str(t))}")
-            print(f"Type: {type(t)}")
-            print(f"Has run: {hasattr(t, 'run')}")
-            print(f"Has invoke: {hasattr(t, 'invoke')}")
-            print(f"Has stop: {hasattr(t, 'stop')}")
-            print("---")
-        print("===========================================\n")
+        if self.debug:
+            print("\n=========== TOOLS IN AGENT INIT ===========")
+            print(f"Total tools: {len(self.tools)}")
+            for i, t in enumerate(self.tools):
+                print(f"Tool {i}: {getattr(t, 'name', str(t))}")
+                print(f"Type: {type(t)}")
+                print(f"Has run: {hasattr(t, 'run')}")
+                print(f"Has invoke: {hasattr(t, 'invoke')}")
+                print(f"Has stop: {hasattr(t, 'stop')}")
+                print("---")
+            print("===========================================\n")
 
         # Create agent
         self._create_agent()
@@ -117,12 +122,13 @@ class CodeAgent:
         )
         
         # Debug before agent initialization
-        print("\n=========== AGENT INITIALIZATION ===========")
-        print(f"Agent type: {AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION}")
-        print(f"LLM type: {type(self.llm)}")
-        print(f"Memory type: {type(window_memory)}")
-        print(f"Number of tools: {len(self.tools)}")
-        print("===========================================\n")
+        if self.debug:
+            print("\n=========== AGENT INITIALIZATION ===========")
+            print(f"Agent type: {AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION}")
+            print(f"LLM type: {type(self.llm)}")
+            print(f"Memory type: {type(window_memory)}")
+            print(f"Number of tools: {len(self.tools)}")
+            print("===========================================\n")
 
         try:
             # Try a different agent type
@@ -137,17 +143,19 @@ class CodeAgent:
                 max_iterations=30
             )
 
-            print("\n=========== AGENT CREATED SUCCESSFULLY ===========")
-            print(f"Agent type: {type(self.agent_executor)}")
-            print(f"Agent dir: {dir(self.agent_executor)[:10]}...")
-            print("=================================================\n")
+            if self.debug:
+                print("\n=========== AGENT CREATED SUCCESSFULLY ===========")
+                print(f"Agent type: {type(self.agent_executor)}")
+                print(f"Agent dir: {dir(self.agent_executor)[:10]}...")
+                print("=================================================\n")
 
         except Exception as e:
-            print(f"\n=========== AGENT CREATION FAILED ===========")
-            print(f"Error: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-            print("==============================================\n")
+            if self.debug:
+                print(f"\n=========== AGENT CREATION FAILED ===========")
+                print(f"Error: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                print("==============================================\n")
             raise
     
     def set_tool_callback(self, callback):
@@ -221,7 +229,7 @@ class CodeAgent:
             except:
                 return summary_result["output"]
         except Exception as e:
-            if self.verbose:
+            if self.debug:
                 import traceback
                 print(f"Error in exploration phase: {str(e)}")
                 print(traceback.format_exc())
@@ -245,7 +253,7 @@ class CodeAgent:
             except:
                 return result["output"]
         except Exception as e:
-            if self.verbose:
+            if self.debug:
                 import traceback
                 print(f"Error in planning phase: {str(e)}")
                 print(traceback.format_exc())
@@ -269,7 +277,7 @@ class CodeAgent:
             except:
                 return result["output"]
         except Exception as e:
-            if self.verbose:
+            if self.debug:
                 import traceback
                 print(f"Error in execution phase: {str(e)}")
                 print(traceback.format_exc())
@@ -308,7 +316,7 @@ class CodeAgent:
             except:
                 return final_result["output"]
         except Exception as e:
-            if self.verbose:
+            if self.debug:
                 import traceback
                 print(f"Error in verification phase: {str(e)}")
                 print(traceback.format_exc())
@@ -319,8 +327,8 @@ class CodeAgent:
         try:
             # First, check if we need to run the agent or we can parse JSON directly
             try:
-                # Print debug info about our tools if verbose
-                if self.verbose:
+                # Print debug info about our tools if debug mode is on
+                if self.debug:
                     print("\nDEBUG - AVAILABLE TOOLS:")
                     for i, tool in enumerate(self.tools):
                         print(f"Tool {i}: {tool.name} - Type: {type(tool)}")
@@ -329,7 +337,7 @@ class CodeAgent:
                         print(f"  - Methods: {[m for m in dir(tool) if not m.startswith('_')]}")
 
                 # Run agent with user message to get JSON response
-                if self.verbose:
+                if self.debug:
                     print("\nDEBUG - RUNNING AGENT WITH USER MESSAGE:")
                     print(f"User message: {message}")
 
@@ -338,20 +346,19 @@ class CodeAgent:
                 })
                 agent_output = response["output"]
 
-                if self.verbose:
+                if self.debug:
                     print(f"\nDEBUG - AGENT OUTPUT: {agent_output}")
-
-                # Parse the JSON response
-                print("\n=========== DIRECT DEBUG OUTPUT ===========")
-                print("RAW MODEL OUTPUT:", agent_output)
+                    print("\n=========== DIRECT DEBUG OUTPUT ===========")
+                    print("RAW MODEL OUTPUT:", agent_output)
 
                 action, params = self.json_parser.parse(agent_output)
 
-                print("DIRECT DEBUG ACTION:", action)
-                print("DIRECT DEBUG PARAMS:", params)
-                print("==========================================\n")
+                if self.debug:
+                    print("DIRECT DEBUG ACTION:", action)
+                    print("DIRECT DEBUG PARAMS:", params)
+                    print("==========================================\n")
 
-                if self.verbose:
+                if self.debug:
                     formatted_action = self.json_parser.format_for_agent(action, params)
                     print(f"Executing action: {formatted_action}")
 
@@ -370,24 +377,25 @@ class CodeAgent:
                 # Get the tool and print debug info
                 tool = self.tool_map[action]
 
-                print("\n=========== DIRECT TOOL DEBUG ===========")
-                print(f"ACTION: {action}")
-                print(f"TOOL TYPE: {type(tool)}")
-                print(f"TOOL DIR: {dir(tool)}")
-                print(f"TOOL CALLABLE: {callable(tool)}")
+                if self.debug:
+                    print("\n=========== DIRECT TOOL DEBUG ===========")
+                    print(f"ACTION: {action}")
+                    print(f"TOOL TYPE: {type(tool)}")
+                    print(f"TOOL DIR: {dir(tool)}")
+                    print(f"TOOL CALLABLE: {callable(tool)}")
 
-                # Check if this is a function or Tool object
-                if hasattr(tool, 'func'):
-                    print(f"TOOL HAS FUNC: {tool.func}")
-                    print(f"TOOL FUNC TYPE: {type(tool.func)}")
+                    # Check if this is a function or Tool object
+                    if hasattr(tool, 'func'):
+                        print(f"TOOL HAS FUNC: {tool.func}")
+                        print(f"TOOL FUNC TYPE: {type(tool.func)}")
 
-                # Check for run/invoke methods
-                if hasattr(tool, 'run'):
-                    print(f"TOOL HAS RUN METHOD: {tool.run}")
-                if hasattr(tool, 'invoke'):
-                    print(f"TOOL HAS INVOKE METHOD: {tool.invoke}")
+                    # Check for run/invoke methods
+                    if hasattr(tool, 'run'):
+                        print(f"TOOL HAS RUN METHOD: {tool.run}")
+                    if hasattr(tool, 'invoke'):
+                        print(f"TOOL HAS INVOKE METHOD: {tool.invoke}")
 
-                print("==========================================\n")
+                    print("==========================================\n")
 
                 # Special case for respond tool - it just needs the message
                 if action == "respond" and "message" in params:
@@ -398,7 +406,7 @@ class CodeAgent:
                     # Format is now file_path_content with a pipe separator
                     try:
                         # Debug info
-                        if self.verbose:
+                        if self.debug:
                             print(f"DEBUG - write_file tool type: {type(tool)}")
                             print(f"DEBUG - write_file tool dir: {dir(tool)}")
                             print(f"DEBUG - write_file param: {params['file_path_content']}")
@@ -420,7 +428,7 @@ class CodeAgent:
                             result = tool.run(params["file_path_content"])
                             return result
                     except Exception as e:
-                        if self.verbose:
+                        if self.debug:
                             import traceback
                             print(f"DEBUG - write_file exception: {str(e)}")
                             print(traceback.format_exc())
@@ -428,76 +436,91 @@ class CodeAgent:
 
                 # For other tools, try different invocation approaches with detailed debugging
                 try:
-                    print("\n=========== TOOL EXECUTION ATTEMPT ===========")
+                    if self.debug:
+                        print("\n=========== TOOL EXECUTION ATTEMPT ===========")
 
                     # Method 1: Try using invoke with params dict
                     try:
-                        print("ATTEMPT 1: Using tool.invoke(params)")
+                        if self.debug:
+                            print("ATTEMPT 1: Using tool.invoke(params)")
                         if hasattr(tool, 'invoke'):
                             result = tool.invoke(params)
-                            print("INVOKE SUCCESS!")
-                            print("==========================================\n")
+                            if self.debug:
+                                print("INVOKE SUCCESS!")
+                                print("==========================================\n")
                             return result
-                        else:
+                        elif self.debug:
                             print("Tool has no invoke method, trying run...")
                     except Exception as e1:
-                        print(f"INVOKE ERROR: {str(e1)}")
+                        if self.debug:
+                            print(f"INVOKE ERROR: {str(e1)}")
 
                     # Method 2: Try using run with the primary parameter value
                     try:
                         if len(params) == 1:
                             param_name = next(iter(params.keys()))
                             param_value = params[param_name]
-                            print(f"ATTEMPT 2: Using tool.run with single param: {param_value}")
+                            if self.debug:
+                                print(f"ATTEMPT 2: Using tool.run with single param: {param_value}")
                             result = tool.run(param_value)
-                            print("RUN SUCCESS!")
-                            print("==========================================\n")
+                            if self.debug:
+                                print("RUN SUCCESS!")
+                                print("==========================================\n")
                             return result
-                        else:
+                        elif self.debug:
                             print("Multiple params, trying JSON...")
                     except Exception as e2:
-                        print(f"RUN ERROR with single param: {str(e2)}")
+                        if self.debug:
+                            print(f"RUN ERROR with single param: {str(e2)}")
 
                     # Method 3: Try using run with JSON string
                     try:
                         import json
                         tool_input = json.dumps(params)
-                        print(f"ATTEMPT 3: Using tool.run with JSON string: {tool_input}")
+                        if self.debug:
+                            print(f"ATTEMPT 3: Using tool.run with JSON string: {tool_input}")
                         result = tool.run(tool_input)
-                        print("RUN SUCCESS with JSON!")
-                        print("==========================================\n")
+                        if self.debug:
+                            print("RUN SUCCESS with JSON!")
+                            print("==========================================\n")
                         return result
                     except Exception as e3:
-                        print(f"RUN ERROR with JSON: {str(e3)}")
+                        if self.debug:
+                            print(f"RUN ERROR with JSON: {str(e3)}")
 
                     # Method 4: Try direct call as function
                     try:
-                        print("ATTEMPT 4: Trying direct function call")
+                        if self.debug:
+                            print("ATTEMPT 4: Trying direct function call")
                         if len(params) == 1:
                             param_name = next(iter(params.keys()))
                             param_value = params[param_name]
                             result = tool(param_value)
                         else:
                             result = tool(**params)
-                        print("DIRECT CALL SUCCESS!")
-                        print("==========================================\n")
+                        if self.debug:
+                            print("DIRECT CALL SUCCESS!")
+                            print("==========================================\n")
                         return result
                     except Exception as e4:
-                        print(f"DIRECT CALL ERROR: {str(e4)}")
+                        if self.debug:
+                            print(f"DIRECT CALL ERROR: {str(e4)}")
 
-                    print("All invocation attempts failed!")
-                    print("==========================================\n")
+                    if self.debug:
+                        print("All invocation attempts failed!")
+                        print("==========================================\n")
                     return f"Error: Failed to execute {action} tool after multiple attempts"
 
                 except Exception as e:
-                    print(f"OVERALL ERROR: {str(e)}")
-                    print("==========================================\n")
+                    if self.debug:
+                        print(f"OVERALL ERROR: {str(e)}")
+                        print("==========================================\n")
                     return f"Error executing tool {action}: {str(e)}"
 
                 return result
 
             except Exception as e:
-                if self.verbose:
+                if self.debug:
                     import traceback
                     print(f"Error parsing JSON: {str(e)}")
                     print(traceback.format_exc())
@@ -506,7 +529,7 @@ class CodeAgent:
                 return f"Error processing response: {str(e)}"
 
         except Exception as e:
-            if self.verbose:
+            if self.debug:
                 import traceback
                 print(f"Error in chat: {str(e)}")
                 print(traceback.format_exc())
