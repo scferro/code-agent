@@ -1,1 +1,183 @@
-# code-agent
+# Code Agent
+
+A Python-based intelligent coding assistant powered by LLMs through Ollama. Code Agent can understand your codebase, answer questions, and help you implement new features.
+
+## Features
+
+- Interactive chat interface with LLM-powered coding assistance
+- Codebase exploration and understanding
+- Semantic code search
+- File creation and modification
+- Multi-phase approach for complex tasks (exploration, planning, execution, verification)
+- Local execution with Ollama (no cloud API required)
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10+
+- [Ollama](https://ollama.ai/) installed and running
+
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/code-agent.git
+   cd code-agent
+   ```
+
+2. Create a virtual environment and activate it (optional):
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. Install the package in development mode:
+   ```bash
+   pip install -e .
+   ```
+
+## Configuration
+
+### Model Configuration
+
+By default, Code Agent uses `gemma3:12b` from Ollama. You can specify a different Ollama model using the `--model` flag:
+
+```bash
+codeagent chat --model "codellama:7b"
+```
+
+### Project Context
+
+You can create a `.agent.md` file in your project root to provide context about your project. This will help the agent better understand your codebase:
+
+```bash
+codeagent init
+```
+
+Then edit the generated `.agent.md` file with your project specifics.
+
+## Usage
+
+### Interactive Chat
+
+Start an interactive chat session in your project directory:
+
+```bash
+codeagent chat
+```
+
+### Execute a Specific Task
+
+Run a one-off task:
+
+```bash
+codeagent task "Create a basic logging setup using the standard library"
+```
+
+### Examples
+
+#### Example 1: Project Exploration
+
+```
+[You]: What files are in this project and what do they do?
+
+[Agent]: The project contains several Python modules organized as follows:
+
+- `codeagent/`: Main package directory
+  - `agent/`: Agent implementation (code_agent.py, prompts.py, workflows.py)
+  - `cli.py`: Command-line interface
+  - `context/`: Project context handling (embeddings.py, project_context.py)
+  - `tools/`: Tool implementations (code_tools.py, file_tools.py, execution_tools.py)
+  - `utils/`: Utility modules (config.py, logger.py, ollama.py)
+```
+
+#### Example 2: Code Creation
+
+```
+[You]: Create a simple Python utility to find duplicate files in a directory
+
+[Agent]: Here's a utility that finds duplicate files based on content:
+
+```python
+# File: find_duplicates.py
+import os
+import hashlib
+from collections import defaultdict
+
+def get_file_hash(filepath):
+    """Calculate SHA-256 hash of a file."""
+    h = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+def find_duplicates(directory):
+    """Find duplicate files in a directory."""
+    hashes = defaultdict(list)
+    
+    for root, _, files in os.walk(directory):
+        for filename in files:
+            filepath = os.path.join(root, filename)
+            try:
+                file_hash = get_file_hash(filepath)
+                hashes[file_hash].append(filepath)
+            except Exception as e:
+                print(f"Error hashing {filepath}: {e}")
+    
+    # Return only files with duplicates
+    return {hash_val: paths for hash_val, paths in hashes.items() if len(paths) > 1}
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) != 2:
+        print("Usage: python find_duplicates.py <directory>")
+        sys.exit(1)
+    
+    directory = sys.argv[1]
+    duplicates = find_duplicates(directory)
+    
+    if not duplicates:
+        print("No duplicate files found.")
+    else:
+        print(f"Found {len(duplicates)} sets of duplicate files:")
+        for i, (hash_val, paths) in enumerate(duplicates.items(), 1):
+            print(f"\nDuplicate set #{i}:")
+            for path in paths:
+                print(f"  - {path}")
+```
+
+## Advanced Usage
+
+### Using Project Context
+
+For better assistance, create a project context file with:
+
+```bash
+codeagent init
+```
+
+Edit the generated `.agent.md` file to include:
+- Project description
+- Architecture overview
+- Code style guidelines
+- Common commands
+- Key file descriptions
+
+### Verbose Mode
+
+Enable verbose mode for detailed output:
+
+```bash
+codeagent chat --verbose
+```
+
+## License
+
+MIT License
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
