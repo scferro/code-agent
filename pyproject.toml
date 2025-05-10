@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "pip>=21.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeagent"
+version = "0.1.0"
+description = "An AI coding agent powered by Ollama"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "click>=8.0.0",
+    "rich>=10.0.0",
+    "pydantic>=2.0.0",
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.10",
+    "langchain-ollama>=0.0.1",
+    "llama-index>=0.9.0",
+    "chromadb>=0.4.18",
+    "sentence-transformers>=2.2.0",
+]
+
+[project.scripts]
+codeagent = "codeagent.main:main"
+
+[tool.setuptools]
+packages = ["codeagent"]
