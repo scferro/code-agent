@@ -17,10 +17,6 @@ from codeagent.tools.execution_tools import get_execution_tools
 from codeagent.context.project_context import ProjectContext
 from codeagent.agent.prompts import (
     get_agent_prompt,
-    get_exploration_prompt,
-    get_planning_prompt,
-    get_execution_prompt,
-    get_verification_prompt
 )
 from codeagent.agent.json_parser import JsonResponseParser
 from codeagent.agent.action_executor import ActionExecutor
@@ -31,7 +27,7 @@ console = Console()
 class CodeAgent:
     """Main agent class that orchestrates the coding assistant"""
 
-    def __init__(self, project_dir=".", model_name="gemma3:12b", verbose=True, debug=False):
+    def __init__(self, project_dir=".", model_name="phi4-reasoning:plus", verbose=True, debug=False):
         self.project_dir = Path(project_dir).absolute()
         self.model_name = model_name
         self.verbose = verbose
@@ -340,11 +336,18 @@ class CodeAgent:
             # Increment turn count at the beginning of each chat interaction
             self.conversation_state.turn_count += 1
 
+            # Always start fresh for each chat in planning phase
+            self.conversation_state.reset_task()
+            # Store the task message
+            self.conversation_state.store_task_data("task", message)
+            print(f"Starting new task in planning phase: {message[:50]}...")
+
             # Print debug info if debug mode is on
             if self.debug:
                 print("\nDEBUG - Starting new conversation turn")
                 print(f"User message: {message}")
                 print(f"Available tools: {len(self.tools)}")
+                print(f"Current execution phase: {self.conversation_state.execution_phase}")
 
             # Process actions in a loop until we get a terminal response
             continue_conversation = True
@@ -392,7 +395,51 @@ class CodeAgent:
                 current_turn = f"\n\n=== CURRENT CONVERSATION TURN: {self.conversation_state.turn_count} ===\n"
                 current_turn += f"USER QUERY: {message}\n\n"
                 current_turn += "YOUR TASK: Respond to this query by taking appropriate actions. Remember to avoid repeating actions already completed successfully.\n"
-                current_turn += "It is very possible or even likely that the task has already been completed. If you belive that is the case, respond ONLY with a summary of what was done to complete the task.\n"
+                
+                # Add phase information if in a specific phase
+                phase_instructions = ""
+
+                # Always get the latest phase from the state
+                phase = self.conversation_state.execution_phase.upper()
+                print(f"DEBUG - Preparing prompt for phase: {phase}")
+
+                phase_instructions = f"\n\n=== CURRENT EXECUTION PHASE: {phase} ===\n"
+
+                # Add phase-specific instructions
+                if phase == "PLANNING":
+                    plan_task = self.conversation_state.get_task_data("task", message)
+                    from codeagent.agent.workflows import format_planning_prompt
+                    phase_instructions += format_planning_prompt(plan_task)
+                    print(f"DEBUG - Added planning prompt for task: {plan_task}")
+
+                elif phase == "EXECUTION":
+                    plan = self.conversation_state.get_task_data("plan", {})
+                    from codeagent.agent.workflows import format_execution_prompt
+                    phase_instructions += format_execution_prompt(plan)
+                    print(f"DEBUG - Added execution prompt with plan: {plan}")
+
+                elif phase == "VERIFICATION":
+                    plan = self.conversation_state.get_task_data("plan", {})
+                    success_criteria = plan.get("success_criteria", ["Task completed successfully"])
+                    from codeagent.agent.workflows import format_verification_prompt
+                    phase_instructions += format_verification_prompt(success_criteria)
+                    print(f"DEBUG - Added verification prompt with criteria: {success_criteria}")
+
+                # Print verbose info about the current phase
+                print(f"Current execution phase: {phase}")
+                if phase == "PLANNING":
+                    print("Waiting for the model to complete planning...")
+                elif phase == "EXECUTION":
+                    print("Waiting for the model to complete execution...")
+                elif phase == "VERIFICATION":
+                    print("Waiting for the model to complete verification...")
+
+                # Debug info about phase instructions
+                if self.debug and self.conversation_state.execution_phase != "none":
+                    print(f"\nDEBUG - Building prompt with phase: {self.conversation_state.execution_phase}")
+                    print(f"Phase instructions length: {len(phase_instructions)} characters")
+                    if len(phase_instructions) > 0:
+                        print(f"Phase instructions first 100 chars: {phase_instructions[:100]}...")
 
                 # Add to the comprehensive prompt
                 comprehensive_prompt = (
@@ -401,6 +448,7 @@ class CodeAgent:
                     f"{action_history}\n"
                     f"{current_results}\n"
                     f"{current_turn}\n"
+                    f"{phase_instructions}"
                 )
 
                 # Save the comprehensive message for debugging
@@ -442,14 +490,13 @@ class CodeAgent:
                         print(f"\nDEBUG - FINAL RESPONSE: {final_response}")
 
                     # Execute the action to display the message to the user and add it to history
-                    action_results = self.action_executor.execute_actions(actions)
+                    action_results = self.action_executor.execute_actions(actions, self.conversation_state)
                     self.conversation_state.add_action_results(action_results)
 
                     # Add the assistant's response to the message history explicitly
                     self.conversation_state.add_assistant_message(final_response)
 
                     # Mark the conversation turn as complete
-                    self.conversation_state.finalize_turn()
                     continue_conversation = False
 
                 # Only execute actions if this is not a final response (we already executed it above)
@@ -459,7 +506,7 @@ class CodeAgent:
                         print("\nDEBUG - Executing action sequence")
 
                     # Execute all actions in sequence
-                    action_results = self.action_executor.execute_actions(actions)
+                    action_results = self.action_executor.execute_actions(actions, self.conversation_state)
 
                     # Store the results for the next round
                     self.conversation_state.add_action_results(action_results)
@@ -491,7 +538,7 @@ class CodeAgent:
         for i, result in enumerate(results):
             action_name = result.get('action', 'unknown')
             status = "SUCCESS" if "error" not in result else "FAILED"
-            
+
             # Format based on action type for better clarity
             if action_name == "list_files":
                 formatted.append(f"✓ ACTION {i+1}: Listed files in directory '{result.get('parameters', {}).get('directory', 'unknown')}' - {status}")
@@ -500,13 +547,23 @@ class CodeAgent:
                     files_count = result['result'].count('📄')
                     dirs_count = result['result'].count('📁')
                     formatted.append(f"  Found {files_count} files and {dirs_count} directories")
+                    # Include the full file listing result for the model to use
+                    formatted.append("\nFILE STRUCTURE:\n" + result['result'])
             elif action_name == "read_file":
                 file_path = result.get('parameters', {}).get('file_path', 'unknown')
                 formatted.append(f"✓ ACTION {i+1}: Read file '{file_path}' - {status}")
                 if status == "FAILED" and 'result' in result:
                     formatted.append(f"  Error: {result['result']}")
+                elif status == "SUCCESS" and 'result' in result:
+                    # Include the file content for the model to use
+                    formatted.append("\nFILE CONTENT:\n" + result['result'])
+            elif action_name == "search_code":
+                formatted.append(f"✓ ACTION {i+1}: Searched for '{result.get('parameters', {}).get('query', 'unknown')}' - {status}")
+                if status == "SUCCESS" and 'result' in result:
+                    # Include the search results for the model to use
+                    formatted.append("\nSEARCH RESULTS:\n" + result['result'])
             else:
                 # Generic format for other actions
                 formatted.append(f"✓ ACTION {i+1}: Executed {action_name} - {status}")
-                
+
         return "\n".join(formatted)

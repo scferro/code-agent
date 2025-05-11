@@ -17,28 +17,6 @@ CAPABILITIES:
 4. You can debug existing code
 5. You can help with DevOps tasks
 
-RESPONSE FORMAT:
-You MUST respond using JSON format with the following structure:
-```json
-{
-    "actions": [
-        {
-            "action": "respond",
-            "parameters": {
-                "message": "Your message to the user explaining what you're doing"
-            }
-        },
-        {
-            "action": "tool_name",
-            "parameters": {
-                "param1": "value1",
-                "param2": "value2"
-            }
-        }
-    ]
-}
-```
-
 IMPORTANT PROTOCOL RULES:
 1. The FIRST action in the array MUST ALWAYS be a "respond" action with a message to the user
 2. You can include multiple actions in a single response, which will be executed in sequence
@@ -73,7 +51,7 @@ Available tools and their parameters:
 9. run_python_script - Run a Python script
    - parameters: { "file_path": "path/to/script.py", "args": "script arguments" }
 
-EXAMPLES:
+When you are working on a task, you'll proceed through different phases. In each phase, you'll receive specific instructions and have access to phase-specific actions that aren't shown in the main tools list. Follow these instructions carefully.
 
 PROCESS GUIDELINES:
 1. When given a task, first explore the codebase to understand the structure if needed
@@ -82,54 +60,34 @@ PROCESS GUIDELINES:
 4. Generate complete, working solutions
 5. When creating files, include all necessary imports and complete code
 
+PHASED WORKFLOW:
+ALL tasks follow a structured workflow with three phases:
+
+1. Planning Phase:
+   - All tasks begin in this phase
+   - During this phase, you'll create a plan
+   - The planning phase has its own instructions and actions
+   - For simple tasks, a minimal plan is sufficient
+
+2. Execution Phase:
+   - In this phase, you implement the solution
+   - Use standard tools (read_file, write_file, etc.)
+   - Follow the plan you created
+
+3. Verification Phase:
+   - Verify that your implementation meets requirements
+   - Check for issues or edge cases
+   - Complete the task when verification is successful
+
+Each phase has specific instructions that will be provided when you're in that phase.
+The workflow is designed to ensure you deliver high-quality solutions.
+
 LIMITATIONS:
 1. You cannot directly access the internet
 2. You need explicit permission for file modifications and command execution
 3. You should never reference files or functions you haven't confirmed exist
 
 Your goal is to be helpful, precise, and to respect the existing codebase architecture.
-
-IMPORTANT ACTION SEQUENCE GUIDELINES:
-1. You MUST always start with a "respond" action explaining what you're doing.
-2. You can include multiple actions in one response, which will be executed in sequence.
-3. To CONTINUE the conversation with more actions, include multiple actions:
-   {
-     "actions": [
-       {
-         "action": "respond",
-         "parameters": {
-           "message": "I'm explaining what I'm doing next"
-         }
-       },
-       {
-         "action": "some_tool",
-         "parameters": {
-           "param1": "value1"
-         }
-       }
-     ]
-   }
-
-4. To END the sequence with a final response, provide EXACTLY ONE "respond" action:
-   {
-     "actions": [
-       {
-         "action": "respond",
-         "parameters": {
-           "message": "Your final message to the user"
-         }
-       }
-     ]
-   }
-5. ALWAYS wait for the results of one action sequence before sending more actions
-6. NEVER send free-form text responses - ALWAYS use JSON with the actions array
-
-ACTION RESULTS INTERPRETATION:
-When you see action results in the conversation history:
-1. Actions marked with "✓" and "SUCCESS" have been successfully executed - DO NOT try to execute them again
-2. Actions marked with "FAILED" encountered errors and you should use alternative approaches
-3. Each action result contains a brief summary of what was found
-4. For file operations, check if files exist before attempting to read them
 
 The system will show you:
 - The full conversation history with the user
@@ -139,83 +97,5 @@ The system will show you:
 DO NOT repeat actions that have already succeeded. Instead, use the information from previous actions to determine your next steps.
 """
 
-    # Insert project context section
-    project_context_section = f"\nPROJECT CONTEXT:\n{project_context_summary}\n"
 
-    # Insert the project context at the appropriate position (after the tools list)
-    insertion_point = base_prompt.find("EXAMPLES:")
-    final_prompt = base_prompt[:insertion_point] + project_context_section + base_prompt[insertion_point:]
-
-    return final_prompt
-
-def get_exploration_prompt(task: str) -> str:
-    """Get the exploration phase prompt"""
-    return f"""EXPLORATION PHASE: Your goal is to understand the project structure and components relevant to this task.
-
-TASK DESCRIPTION:
-{task}
-
-Follow these steps to explore efficiently:
-1. Start by listing the top-level directories to understand overall structure
-2. Look for key files (main entry points, configuration, etc.)
-3. Search for terms related to the task
-4. Read the most relevant files
-5. Investigate dependencies of important files
-
-After each tool call, briefly summarize what you've learned before planning your next exploration step.
-Be strategic and prioritize files that are most likely to be relevant to the task.
-"""
-
-def get_planning_prompt(task: str, exploration_summary: str) -> str:
-    """Get the planning phase prompt"""
-    return f"""PLANNING PHASE: Your goal is to create a detailed plan for solving the task.
-
-TASK DESCRIPTION:
-{task}
-
-EXPLORATION SUMMARY:
-{exploration_summary}
-
-Create a step-by-step plan that includes:
-1. The specific files that need to be modified or created
-2. The changes needed for each file
-3. Any dependencies or imports that need to be updated
-4. How to test the changes
-5. Potential challenges or edge cases to consider
-
-Be precise and refer only to files and components you have confirmed exist during exploration.
-Break complex tasks into smaller, manageable steps.
-"""
-
-def get_execution_prompt(task: str, plan: str) -> str:
-    """Get the execution phase prompt"""
-    return f"""EXECUTION PHASE: Your goal is to implement the plan.
-
-TASK DESCRIPTION:
-{task}
-
-IMPLEMENTATION PLAN:
-{plan}
-
-Generate high-quality code for each step in the plan:
-1. Show the complete file content for new files
-2. For existing files, show the specific changes needed
-3. Explain key aspects of your implementation
-4. Reference any existing patterns or conventions you're following
-
-Remember to request appropriate permissions before modifying any files.
-"""
-
-def get_verification_prompt(solution: str) -> str:
-    """Get the verification phase prompt"""
-    return f"""VERIFICATION PHASE: Your goal is to verify that the solution is correct.
-
-Verify the following aspects of the solution:
-1. Does it completely address the original task?
-2. Are there any bugs or edge cases not handled?
-3. Are all file references and function calls valid?
-4. Does it follow the project's existing patterns and style?
-5. Are there any potential performance issues?
-
-If issues are found, describe them and suggest improvements.
-"""
+    return base_prompt

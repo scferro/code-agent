@@ -137,6 +137,14 @@ class JsonResponseParser:
             # For respond, handle the message parameter
             elif action == 'respond' and isinstance(action_input, str):
                 params = {'message': action_input}
+            # For phase transition actions with plans
+            elif action == 'complete_planning' and isinstance(action_input, dict):
+                # The action_input itself is the entire plan structure, don't nest it
+                params = action_input
+            elif action == 'complete_execution':
+                params = action_input if isinstance(action_input, dict) else {'status': str(action_input)}
+            elif action == 'complete_verification':
+                params = action_input if isinstance(action_input, dict) else {'successful': False, 'summary': str(action_input)}
             # Generic fallback for other tools
             else:
                 params = {'input': action_input}
