@@ -27,12 +27,13 @@ console = Console()
 class CodeAgent:
     """Main agent class that orchestrates the coding assistant"""
 
-    def __init__(self, project_dir=".", model_name="gemma3:27b", verbose=True, debug=False):
+    def __init__(self, project_dir=".", model_name="gemma3:12b", verbose=True, debug=False):
         self.project_dir = Path(project_dir).absolute()
         self.model_name = model_name
         self.verbose = verbose
         self.debug = debug
         self.tool_callback = None
+        self._initialized = True
 
         # Initialize context
         self.project_context = ProjectContext(project_dir)
@@ -168,24 +169,16 @@ class CodeAgent:
             self.action_executor.set_tool_callback(callback)
 
     def process_task(self, task_description):
-        """Process a coding task using a multi-phase approach"""
+        """Process a coding task directly using the chat interface"""
         try:
             # Add initial system context from .agent.md files
             static_context = self.project_context.get_static_context_summary()
             if static_context:
                 self.memory.chat_memory.add_message(AIMessage(content=f"Project context loaded: {static_context}"))
-            
-            # Phase 1: Exploration
-            print("[bold]Phase 1: Exploration[/bold]")
-            exploration_result = self._run_exploration_phase(task_description)
-            
-            # Phase 2: Planning
-            print("[bold]Phase 2: Planning[/bold]")
-            plan = self._run_planning_phase(task_description, exploration_result)
-            
-            # Phase 3: Execution with integrated verification
-            print("[bold]Phase 3: Execution with Verification[/bold]")
-            solution = self._run_execution_phase(task_description, plan)
+
+            # Simply use the chat method to process the task
+            print("[bold]Processing task...[/bold]")
+            solution = self.chat(task_description)
 
             return solution
         except Exception as e:
@@ -193,98 +186,6 @@ class CodeAgent:
             import traceback
             print(traceback.format_exc())
             return f"An error occurred: {str(e)}"
-    
-    def _run_exploration_phase(self, task: str) -> str:
-        """Run the exploration phase to understand the project"""
-        try:
-            # Run agent with exploration focus
-            result = self.agent_executor.invoke({
-                "input": f"EXPLORATION PHASE: I need to explore this codebase to solve this task: {task}"
-            })
-
-            # Parse output as JSON and handle accordingly
-            try:
-                action, params = self.json_parser.parse(result["output"])
-                if action == "respond":
-                    exploration_result = params.get("message", "No exploration results.")
-                else:
-                    exploration_result = result["output"]
-            except:
-                exploration_result = result["output"]
-
-            # Add exploration summary message to memory
-            self.memory.chat_memory.add_message(HumanMessage(content="Please summarize what you've learned about this codebase."))
-
-            # Get exploration summary
-            summary_result = self.agent_executor.invoke({
-                "input": "Based on your exploration, summarize the key files, structure, and components relevant to my task."
-            })
-
-            # Parse output as JSON and handle accordingly
-            try:
-                action, params = self.json_parser.parse(summary_result["output"])
-                if action == "respond":
-                    return params.get("message", "No exploration summary.")
-                else:
-                    return summary_result["output"]
-            except:
-                return summary_result["output"]
-        except Exception as e:
-            if self.debug:
-                import traceback
-                print(f"Error in exploration phase: {str(e)}")
-                print(traceback.format_exc())
-            return f"Error during exploration: {str(e)}"
-    
-    def _run_planning_phase(self, task: str, exploration_result: str) -> str:
-        """Run the planning phase to create a solution plan"""
-        try:
-            # Run agent with planning focus
-            result = self.agent_executor.invoke({
-                "input": f"PLANNING PHASE: Based on your exploration, create a detailed step-by-step plan to implement this task: {task}"
-            })
-
-            # Parse output as JSON and handle accordingly
-            try:
-                action, params = self.json_parser.parse(result["output"])
-                if action == "respond":
-                    return params.get("message", "No planning results.")
-                else:
-                    return result["output"]
-            except:
-                return result["output"]
-        except Exception as e:
-            if self.debug:
-                import traceback
-                print(f"Error in planning phase: {str(e)}")
-                print(traceback.format_exc())
-            return f"Error during planning: {str(e)}"
-    
-    def _run_execution_phase(self, task: str, plan: str) -> str:
-        """Run the execution phase with integrated verification to implement the solution"""
-        try:
-            # Run agent with execution focus that includes verification
-            result = self.agent_executor.invoke({
-                "input": f"EXECUTION PHASE: Implement and verify the solution for this task according to the plan we created: {task}"
-            })
-
-            # Parse output as JSON and handle accordingly
-            try:
-                action, params = self.json_parser.parse(result["output"])
-                if action == "respond":
-                    return params.get("message", "No execution results.")
-                else:
-                    return result["output"]
-            except:
-                return result["output"]
-        except Exception as e:
-            if self.debug:
-                import traceback
-                print(f"Error in execution phase: {str(e)}")
-                print(traceback.format_exc())
-            return f"Error during execution: {str(e)}"
-
-    # The verification phase is now integrated into the execution phase
     
     def chat(self, message: str) -> str:
         """Chat with the agent using sequential action protocol."""
@@ -295,18 +196,18 @@ class CodeAgent:
             # Increment turn count at the beginning of each chat interaction
             self.conversation_state.turn_count += 1
 
-            # Always start fresh for each chat in planning phase
+            # Reset task data for each new chat
             self.conversation_state.reset_task()
+
             # Store the task message
             self.conversation_state.store_task_data("task", message)
-            print(f"Starting new task in planning phase: {message[:50]}...")
+            print(f"Starting new task: {message[:50]}...")
 
             # Print debug info if debug mode is on
             if self.debug:
                 print("\nDEBUG - Starting new conversation turn")
                 print(f"User message: {message}")
                 print(f"Available tools: {len(self.tools)}")
-                print(f"Current execution phase: {self.conversation_state.execution_phase}")
 
             # Process actions in a loop until we get a terminal response
             continue_conversation = True
@@ -344,59 +245,15 @@ class CodeAgent:
                 else:
                     action_history += "No previous actions.\n"
 
-                # Format current actions results with clear SUCCESS/FAILURE indicators
-                current_results = "\n\n=== MOST RECENT ACTION RESULTS ===\n"
-                if self.conversation_state.current_action_results:
-                    current_results += self.format_action_results(self.conversation_state.current_action_results)
-                else:
-                    current_results += "No current action results.\n"
-
-                # Add phase information if in a specific phase
-                phase_instructions = ""
-
-                # Always get the latest phase from the state
-                phase = self.conversation_state.execution_phase.upper()
-                print(f"DEBUG - Preparing prompt for phase: {phase}")
-
-                phase_instructions = f"\n\n=== CURRENT EXECUTION PHASE: {phase} ===\n"
-
-                # Add phase-specific instructions
-                if phase == "PLANNING":
-                    plan_task = self.conversation_state.get_task_data("task", message)
-                    from codeagent.agent.workflows import format_planning_prompt, format_planning_examples
-                    phase_instructions += format_planning_prompt(plan_task)
-                    # phase_instructions += format_planning_examples()
-                    print(f"DEBUG - Added planning prompt for task: {plan_task}")
-
-                elif phase == "EXECUTION":
-                    plan = self.conversation_state.get_task_data("plan", {})
-                    from codeagent.agent.workflows import format_execution_prompt
-                    phase_instructions += format_execution_prompt(plan)
-                    print(f"DEBUG - Added execution prompt with plan: {plan}")
-
-                # We no longer have a separate verification phase
-
-                # Print verbose info about the current phase
-                print(f"Current execution phase: {phase}")
-                if phase == "PLANNING":
-                    print("Waiting for the model to complete planning...")
-                elif phase == "EXECUTION":
-                    print("Waiting for the model to complete execution with verification...")
-                elif phase == "DONE":
-                    print("Task has been completed.")
-
-                # Debug info about phase instructions
-                if self.debug and self.conversation_state.execution_phase != "none":
-                    print(f"\nDEBUG - Building prompt with phase: {self.conversation_state.execution_phase}")
-                    print(f"Phase instructions length: {len(phase_instructions)} characters")
+                # Task-specific context
+                last_message = f"\n\n=== LAST MESSAGE FROM USER ===\n{message}\n"
 
                 # Add to the comprehensive prompt
                 comprehensive_prompt = (
                     f"{system_prompt}\n\n"
-                    f"{phase_instructions}\n"
                     f"{action_history}\n"
-                    f"{current_results}\n"
                     f"{conversation_history}"
+                    f"{last_message}\n"
                 )
 
                 # Save the comprehensive message for debugging
@@ -423,26 +280,30 @@ class CodeAgent:
                     print(f"\nDEBUG - PARSED ACTIONS ({len(actions)}):")
                     print(self.json_parser.format_for_agent(actions))
 
-                # Check if this is a final response (only respond action)
+                # Check if this is a final response (only respond action or end_turn)
                 is_final = self.conversation_state.is_final_response(actions)
 
                 if is_final:
                     if self.debug:
                         print("\nDEBUG - Final response received, ending conversation turn")
 
-                    # Get the response message
-                    final_response = actions[0]["parameters"].get("message", "No response provided")
-
-                    # Show the response without the tool summary prefix
-                    if self.debug:
-                        print(f"\nDEBUG - FINAL RESPONSE: {final_response}")
-
-                    # Execute the action to display the message to the user and add it to history
+                    # Execute the actions
                     action_results = self.action_executor.execute_actions(actions, self.conversation_state)
                     self.conversation_state.add_action_results(action_results)
 
-                    # Add the assistant's response to the message history explicitly
-                    self.conversation_state.add_assistant_message(final_response)
+                    # Get the final message to return (from respond or end_turn action)
+                    final_message = None
+                    for action in actions:
+                        if action["action"] in ["respond", "end_turn"]:
+                            final_message = action["parameters"].get("message", "Task completed.")
+                            break
+
+                    if final_message:
+                        # Add the assistant's response to the message history
+                        self.conversation_state.add_assistant_message(final_message)
+                        final_response = final_message
+                    else:
+                        final_response = "Task completed."
 
                     # Mark the conversation turn as complete
                     continue_conversation = False
@@ -462,12 +323,12 @@ class CodeAgent:
                     # Check if we should continue
                     continue_conversation = self.conversation_state.should_continue_action_sequence()
 
-                # If we're not continuing, get the last response message
-                if not continue_conversation:
+                # If we're not continuing without an explicit end, get the last response message
+                if not continue_conversation and not is_final:
                     # Find the last respond action
                     for result in reversed(action_results):
-                        if result["action"] == "respond":
-                            final_response = result.get("result", "Action completed")
+                        if result["action"] == "respond" and "message" in result:
+                            final_response = result["message"]
                             break
 
             return final_response
@@ -515,3 +376,49 @@ class CodeAgent:
                 formatted.append(f"✓ ACTION {i+1}: Executed {action_name} - {status}")
 
         return "\n".join(formatted)
+
+    def cleanup(self):
+        """Clean up resources when the agent is no longer needed.
+
+        This method should be called when you're done using the agent to properly
+        release resources and clear the model from memory.
+        """
+        if self.debug:
+            print("Cleaning up agent resources...")
+
+        # Clear any cached model data
+        if hasattr(self, 'llm') and hasattr(self.llm, 'client'):
+            try:
+                # Some langchain models have a cleanup method
+                if hasattr(self.llm, 'cleanup'):
+                    self.llm.cleanup()
+
+                # For Ollama models, we can close the client if it exists
+                if hasattr(self.llm, 'client') and hasattr(self.llm.client, 'close'):
+                    self.llm.client.close()
+
+                # Or if it has a session attribute that can be closed
+                if hasattr(self.llm, 'client') and hasattr(self.llm.client, 'session') and hasattr(self.llm.client.session, 'close'):
+                    self.llm.client.session.close()
+            except Exception as e:
+                if self.debug:
+                    print(f"Error during model cleanup: {e}")
+
+        # Clear memory
+        if hasattr(self, 'memory'):
+            self.memory.clear()
+
+        # Clear conversation state
+        if hasattr(self, 'conversation_state'):
+            self.conversation_state = None
+
+        # Mark as not initialized
+        self._initialized = False
+
+        if self.debug:
+            print("Agent cleanup completed")
+
+    def __del__(self):
+        """Destructor to ensure cleanup happens."""
+        if hasattr(self, '_initialized') and self._initialized:
+            self.cleanup()

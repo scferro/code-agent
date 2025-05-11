@@ -217,8 +217,14 @@ def get_file_tools(project_context):
         # This tool simply returns the message, which will be displayed to the user
         return message
 
+    @tool
+    def end_turn(message):
+        """Signal that the task is complete and end your turn."""
+        # This tool marks the task as complete and returns a final message
+        return message
+
     # Create the tools list
-    tools = [list_files, read_file, search_code, write_file, respond]
+    tools = [list_files, read_file, search_code, write_file, respond, end_turn]
 
     # Return all tools - use the standard @tool decorated function
     return tools
