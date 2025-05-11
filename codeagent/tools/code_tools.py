@@ -1,9 +1,7 @@
 """Code analysis tools"""
-from langchain.tools import BaseTool, StructuredTool, tool
-from pathlib import Path
-import os
+from langchain.tools import tool
 import re
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 def get_code_tools(project_context):
     """Get code analysis tools"""

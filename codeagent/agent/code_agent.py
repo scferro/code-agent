@@ -27,7 +27,7 @@ console = Console()
 class CodeAgent:
     """Main agent class that orchestrates the coding assistant"""
 
-    def __init__(self, project_dir=".", model_name="phi4-reasoning:plus", verbose=True, debug=False):
+    def __init__(self, project_dir=".", model_name="gemma3:27b", verbose=True, debug=False):
         self.project_dir = Path(project_dir).absolute()
         self.model_name = model_name
         self.verbose = verbose
@@ -44,7 +44,7 @@ class CodeAgent:
         # Set up LLM
         self.llm = ChatOllama(
             model=model_name,
-            temperature=0.5,
+            temperature=0.3,
             format="json",
             verbose=verbose,
             num_predict=-2,
@@ -183,15 +183,11 @@ class CodeAgent:
             print("[bold]Phase 2: Planning[/bold]")
             plan = self._run_planning_phase(task_description, exploration_result)
             
-            # Phase 3: Execution
-            print("[bold]Phase 3: Execution[/bold]")
+            # Phase 3: Execution with integrated verification
+            print("[bold]Phase 3: Execution with Verification[/bold]")
             solution = self._run_execution_phase(task_description, plan)
-            
-            # Phase 4: Verification
-            print("[bold]Phase 4: Verification[/bold]")
-            verified_solution = self._run_verification_phase(solution)
-            
-            return verified_solution
+
+            return solution
         except Exception as e:
             print(f"[bold red]Error during task processing:[/bold red] {str(e)}")
             import traceback
@@ -265,11 +261,11 @@ class CodeAgent:
             return f"Error during planning: {str(e)}"
     
     def _run_execution_phase(self, task: str, plan: str) -> str:
-        """Run the execution phase to implement the solution"""
+        """Run the execution phase with integrated verification to implement the solution"""
         try:
-            # Run agent with execution focus
+            # Run agent with execution focus that includes verification
             result = self.agent_executor.invoke({
-                "input": f"EXECUTION PHASE: Implement the solution for this task according to the plan we created: {task}"
+                "input": f"EXECUTION PHASE: Implement and verify the solution for this task according to the plan we created: {task}"
             })
 
             # Parse output as JSON and handle accordingly
@@ -288,44 +284,7 @@ class CodeAgent:
                 print(traceback.format_exc())
             return f"Error during execution: {str(e)}"
 
-    def _run_verification_phase(self, solution: str) -> str:
-        """Run the verification phase to check the solution"""
-        try:
-            # Run agent with verification focus
-            result = self.agent_executor.invoke({
-                "input": "VERIFICATION PHASE: Please review the solution we've created. Identify any issues, edge cases, or improvements."
-            })
-
-            # Parse verification output
-            try:
-                action, params = self.json_parser.parse(result["output"])
-                verification_result = params.get("message", result["output"]) if action == "respond" else result["output"]
-            except:
-                verification_result = result["output"]
-
-            # Add final comprehensive solution message
-            self.memory.chat_memory.add_message(HumanMessage(content="Now, provide the final complete solution with any improvements."))
-
-            # Get final solution
-            final_result = self.agent_executor.invoke({
-                "input": "Please provide the complete final solution incorporating any improvements from the verification phase."
-            })
-
-            # Parse final output
-            try:
-                action, params = self.json_parser.parse(final_result["output"])
-                if action == "respond":
-                    return params.get("message", "No final solution provided.")
-                else:
-                    return final_result["output"]
-            except:
-                return final_result["output"]
-        except Exception as e:
-            if self.debug:
-                import traceback
-                print(f"Error in verification phase: {str(e)}")
-                print(traceback.format_exc())
-            return f"Error during verification: {str(e)}"
+    # The verification phase is now integrated into the execution phase
     
     def chat(self, message: str) -> str:
         """Chat with the agent using sequential action protocol."""
@@ -391,11 +350,7 @@ class CodeAgent:
                     current_results += self.format_action_results(self.conversation_state.current_action_results)
                 else:
                     current_results += "No current action results.\n"
-                    
-                current_turn = f"\n\n=== CURRENT CONVERSATION TURN: {self.conversation_state.turn_count} ===\n"
-                current_turn += f"USER QUERY: {message}\n\n"
-                current_turn += "YOUR TASK: Respond to this query by taking appropriate actions. Remember to avoid repeating actions already completed successfully.\n"
-                
+
                 # Add phase information if in a specific phase
                 phase_instructions = ""
 
@@ -408,8 +363,9 @@ class CodeAgent:
                 # Add phase-specific instructions
                 if phase == "PLANNING":
                     plan_task = self.conversation_state.get_task_data("task", message)
-                    from codeagent.agent.workflows import format_planning_prompt
+                    from codeagent.agent.workflows import format_planning_prompt, format_planning_examples
                     phase_instructions += format_planning_prompt(plan_task)
+                    # phase_instructions += format_planning_examples()
                     print(f"DEBUG - Added planning prompt for task: {plan_task}")
 
                 elif phase == "EXECUTION":
@@ -418,37 +374,29 @@ class CodeAgent:
                     phase_instructions += format_execution_prompt(plan)
                     print(f"DEBUG - Added execution prompt with plan: {plan}")
 
-                elif phase == "VERIFICATION":
-                    plan = self.conversation_state.get_task_data("plan", {})
-                    success_criteria = plan.get("success_criteria", ["Task completed successfully"])
-                    from codeagent.agent.workflows import format_verification_prompt
-                    phase_instructions += format_verification_prompt(success_criteria)
-                    print(f"DEBUG - Added verification prompt with criteria: {success_criteria}")
+                # We no longer have a separate verification phase
 
                 # Print verbose info about the current phase
                 print(f"Current execution phase: {phase}")
                 if phase == "PLANNING":
                     print("Waiting for the model to complete planning...")
                 elif phase == "EXECUTION":
-                    print("Waiting for the model to complete execution...")
-                elif phase == "VERIFICATION":
-                    print("Waiting for the model to complete verification...")
+                    print("Waiting for the model to complete execution with verification...")
+                elif phase == "DONE":
+                    print("Task has been completed.")
 
                 # Debug info about phase instructions
                 if self.debug and self.conversation_state.execution_phase != "none":
                     print(f"\nDEBUG - Building prompt with phase: {self.conversation_state.execution_phase}")
                     print(f"Phase instructions length: {len(phase_instructions)} characters")
-                    if len(phase_instructions) > 0:
-                        print(f"Phase instructions first 100 chars: {phase_instructions[:100]}...")
 
                 # Add to the comprehensive prompt
                 comprehensive_prompt = (
                     f"{system_prompt}\n\n"
-                    f"{conversation_history}\n"
+                    f"{phase_instructions}\n"
                     f"{action_history}\n"
                     f"{current_results}\n"
-                    f"{current_turn}\n"
-                    f"{phase_instructions}"
+                    f"{conversation_history}"
                 )
 
                 # Save the comprehensive message for debugging
