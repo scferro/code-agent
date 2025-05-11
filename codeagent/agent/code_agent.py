@@ -23,6 +23,8 @@ from codeagent.agent.prompts import (
     get_verification_prompt
 )
 from codeagent.agent.json_parser import JsonResponseParser
+from codeagent.agent.action_executor import ActionExecutor
+from codeagent.agent.conversation_state import ConversationState
 
 console = Console()
 
@@ -39,8 +41,9 @@ class CodeAgent:
         # Initialize context
         self.project_context = ProjectContext(project_dir)
 
-        # Initialize JSON parser
+        # Initialize JSON parser and state management
         self.json_parser = JsonResponseParser()
+        self.conversation_state = ConversationState()
 
         # Set up LLM
         self.llm = ChatOllama(
@@ -75,6 +78,9 @@ class CodeAgent:
             self.tool_map = {}
             for tool in self.tools:
                 self.tool_map[tool.name] = tool
+
+            # Initialize action executor
+            self.action_executor = ActionExecutor(self.tool_map, self.project_context, debug=debug)
 
             if not self.tools:
                 print("Warning: No tools were loaded. Check your tool implementation files.")
@@ -161,6 +167,9 @@ class CodeAgent:
     def set_tool_callback(self, callback):
         """Set a callback function to be called before tool execution"""
         self.tool_callback = callback
+        # Also set it on the action executor
+        if hasattr(self, 'action_executor'):
+            self.action_executor.set_tool_callback(callback)
 
     def process_task(self, task_description):
         """Process a coding task using a multi-phase approach"""
@@ -323,214 +332,181 @@ class CodeAgent:
             return f"Error during verification: {str(e)}"
     
     def chat(self, message: str) -> str:
-        """Chat with the agent"""
+        """Chat with the agent using sequential action protocol."""
         try:
-            # First, check if we need to run the agent or we can parse JSON directly
-            try:
-                # Print debug info about our tools if debug mode is on
-                if self.debug:
-                    print("\nDEBUG - AVAILABLE TOOLS:")
-                    for i, tool in enumerate(self.tools):
-                        print(f"Tool {i}: {tool.name} - Type: {type(tool)}")
-                        if hasattr(tool, 'func'):
-                            print(f"  - Has func attribute: {tool.func.__name__}")
-                        print(f"  - Methods: {[m for m in dir(tool) if not m.startswith('_')]}")
+            # Start a new conversation turn
+            self.conversation_state.add_user_message(message)
 
-                # Run agent with user message to get JSON response
-                if self.debug:
-                    print("\nDEBUG - RUNNING AGENT WITH USER MESSAGE:")
-                    print(f"User message: {message}")
+            # Increment turn count at the beginning of each chat interaction
+            self.conversation_state.turn_count += 1
 
+            # Print debug info if debug mode is on
+            if self.debug:
+                print("\nDEBUG - Starting new conversation turn")
+                print(f"User message: {message}")
+                print(f"Available tools: {len(self.tools)}")
+
+            # Process actions in a loop until we get a terminal response
+            continue_conversation = True
+            final_response = "No response generated"
+
+            # Get the system prompt
+            system_prompt = get_agent_prompt(self.project_context)
+
+            while continue_conversation:
+                # Invoke the agent to get actions
+                if self.debug:
+                    print("\nDEBUG - Invoking agent for next actions")
+
+                # Format conversation history
+                conversation_history = "\n\n=== CONVERSATION HISTORY ===\n"
+                for msg in self.conversation_state.message_history:
+                    role = msg["role"]
+                    content = msg["content"]
+                    conversation_history += f"{role.upper()}: {content}\n"
+
+                # Add assistant responses from action history to conversation history
+                assistant_responses = []
+                for action in self.conversation_state.action_history:
+                    if action["action"] == "respond" and "original_parameters" in action:
+                        if "message" in action["original_parameters"]:
+                            assistant_message = action["original_parameters"]["message"]
+                            if assistant_message not in assistant_responses:
+                                conversation_history += f"ASSISTANT: {assistant_message}\n"
+                                assistant_responses.append(assistant_message)
+
+                # Format action history with clear SUCCESS/FAILURE indicators
+                action_history = "\n\n=== PREVIOUS ACTIONS COMPLETED ===\n"
+                if self.conversation_state.action_history:
+                    action_history += self.format_action_results(self.conversation_state.action_history)
+                else:
+                    action_history += "No previous actions.\n"
+
+                # Format current actions results with clear SUCCESS/FAILURE indicators
+                current_results = "\n\n=== MOST RECENT ACTION RESULTS ===\n"
+                if self.conversation_state.current_action_results:
+                    current_results += self.format_action_results(self.conversation_state.current_action_results)
+                else:
+                    current_results += "No current action results.\n"
+                    
+                current_turn = f"\n\n=== CURRENT CONVERSATION TURN: {self.conversation_state.turn_count} ===\n"
+                current_turn += f"USER QUERY: {message}\n\n"
+                current_turn += "YOUR TASK: Respond to this query by taking appropriate actions. Remember to avoid repeating actions already completed successfully.\n"
+                current_turn += "It is very possible or even likely that the task has already been completed. If you belive that is the case, respond ONLY with a summary of what was done to complete the task.\n"
+
+                # Add to the comprehensive prompt
+                comprehensive_prompt = (
+                    f"{system_prompt}\n\n"
+                    f"{conversation_history}\n"
+                    f"{action_history}\n"
+                    f"{current_results}\n"
+                    f"{current_turn}\n"
+                )
+
+                # Save the comprehensive message for debugging
+                with open("last_message.txt", "w") as f:
+                    f.write(comprehensive_prompt)
+
+                if self.debug:
+                    print(f"\nDEBUG - Input to model:\n{comprehensive_prompt[:500]}...[truncated]")
+
+                # Run agent with the comprehensive context
                 response = self.agent_executor.invoke({
-                    "input": message
+                    "input": comprehensive_prompt
                 })
+
                 agent_output = response["output"]
 
                 if self.debug:
-                    print(f"\nDEBUG - AGENT OUTPUT: {agent_output}")
-                    print("\n=========== DIRECT DEBUG OUTPUT ===========")
-                    print("RAW MODEL OUTPUT:", agent_output)
+                    print(f"\nDEBUG - RAW MODEL OUTPUT:\n{agent_output}")
 
-                action, params = self.json_parser.parse(agent_output)
-
-                if self.debug:
-                    print("DIRECT DEBUG ACTION:", action)
-                    print("DIRECT DEBUG PARAMS:", params)
-                    print("==========================================\n")
+                # Parse the actions from the model response
+                actions = self.json_parser.parse(agent_output)
 
                 if self.debug:
-                    formatted_action = self.json_parser.format_for_agent(action, params)
-                    print(f"Executing action: {formatted_action}")
+                    print(f"\nDEBUG - PARSED ACTIONS ({len(actions)}):")
+                    print(self.json_parser.format_for_agent(actions))
 
-                # Check if we should use the respond tool directly
-                if action == "respond":
-                    return params.get("message", "No response message provided.")
+                # Check if this is a final response (only respond action)
+                is_final = self.conversation_state.is_final_response(actions)
 
-                # Execute the tool
-                if action not in self.tool_map:
-                    return f"Error: Unknown action '{action}'. Please use a valid tool."
-
-                # Notify callback if registered
-                if self.tool_callback and callable(self.tool_callback):
-                    self.tool_callback(action, params)
-
-                # Get the tool and print debug info
-                tool = self.tool_map[action]
-
-                if self.debug:
-                    print("\n=========== DIRECT TOOL DEBUG ===========")
-                    print(f"ACTION: {action}")
-                    print(f"TOOL TYPE: {type(tool)}")
-                    print(f"TOOL DIR: {dir(tool)}")
-                    print(f"TOOL CALLABLE: {callable(tool)}")
-
-                    # Check if this is a function or Tool object
-                    if hasattr(tool, 'func'):
-                        print(f"TOOL HAS FUNC: {tool.func}")
-                        print(f"TOOL FUNC TYPE: {type(tool.func)}")
-
-                    # Check for run/invoke methods
-                    if hasattr(tool, 'run'):
-                        print(f"TOOL HAS RUN METHOD: {tool.run}")
-                    if hasattr(tool, 'invoke'):
-                        print(f"TOOL HAS INVOKE METHOD: {tool.invoke}")
-
-                    print("==========================================\n")
-
-                # Special case for respond tool - it just needs the message
-                if action == "respond" and "message" in params:
-                    return params["message"]
-
-                # Special case for write_file
-                if action == "write_file" and "file_path_content" in params:
-                    # Format is now file_path_content with a pipe separator
-                    try:
-                        # Debug info
-                        if self.debug:
-                            print(f"DEBUG - write_file tool type: {type(tool)}")
-                            print(f"DEBUG - write_file tool dir: {dir(tool)}")
-                            print(f"DEBUG - write_file param: {params['file_path_content']}")
-
-                        # Try to extract the file path and content for direct file creation
-                        file_path_content = params["file_path_content"]
-                        if '|' in file_path_content:
-                            parts = file_path_content.split('|', 1)
-                            file_path = parts[0].strip()
-                            content = parts[1] if len(parts) > 1 else ""
-
-                            # Create the file directly
-                            full_path = self.project_context.project_dir / file_path
-                            full_path.parent.mkdir(parents=True, exist_ok=True)
-                            full_path.write_text(content)
-                            return f"Successfully wrote to {file_path}"
-                        else:
-                            # Try using the tool with the parameter
-                            result = tool.run(params["file_path_content"])
-                            return result
-                    except Exception as e:
-                        if self.debug:
-                            import traceback
-                            print(f"DEBUG - write_file exception: {str(e)}")
-                            print(traceback.format_exc())
-                        return f"Error writing file: {str(e)}"
-
-                # For other tools, try different invocation approaches with detailed debugging
-                try:
+                if is_final:
                     if self.debug:
-                        print("\n=========== TOOL EXECUTION ATTEMPT ===========")
+                        print("\nDEBUG - Final response received, ending conversation turn")
 
-                    # Method 1: Try using invoke with params dict
-                    try:
-                        if self.debug:
-                            print("ATTEMPT 1: Using tool.invoke(params)")
-                        if hasattr(tool, 'invoke'):
-                            result = tool.invoke(params)
-                            if self.debug:
-                                print("INVOKE SUCCESS!")
-                                print("==========================================\n")
-                            return result
-                        elif self.debug:
-                            print("Tool has no invoke method, trying run...")
-                    except Exception as e1:
-                        if self.debug:
-                            print(f"INVOKE ERROR: {str(e1)}")
+                    # Get the response message
+                    final_response = actions[0]["parameters"].get("message", "No response provided")
 
-                    # Method 2: Try using run with the primary parameter value
-                    try:
-                        if len(params) == 1:
-                            param_name = next(iter(params.keys()))
-                            param_value = params[param_name]
-                            if self.debug:
-                                print(f"ATTEMPT 2: Using tool.run with single param: {param_value}")
-                            result = tool.run(param_value)
-                            if self.debug:
-                                print("RUN SUCCESS!")
-                                print("==========================================\n")
-                            return result
-                        elif self.debug:
-                            print("Multiple params, trying JSON...")
-                    except Exception as e2:
-                        if self.debug:
-                            print(f"RUN ERROR with single param: {str(e2)}")
-
-                    # Method 3: Try using run with JSON string
-                    try:
-                        import json
-                        tool_input = json.dumps(params)
-                        if self.debug:
-                            print(f"ATTEMPT 3: Using tool.run with JSON string: {tool_input}")
-                        result = tool.run(tool_input)
-                        if self.debug:
-                            print("RUN SUCCESS with JSON!")
-                            print("==========================================\n")
-                        return result
-                    except Exception as e3:
-                        if self.debug:
-                            print(f"RUN ERROR with JSON: {str(e3)}")
-
-                    # Method 4: Try direct call as function
-                    try:
-                        if self.debug:
-                            print("ATTEMPT 4: Trying direct function call")
-                        if len(params) == 1:
-                            param_name = next(iter(params.keys()))
-                            param_value = params[param_name]
-                            result = tool(param_value)
-                        else:
-                            result = tool(**params)
-                        if self.debug:
-                            print("DIRECT CALL SUCCESS!")
-                            print("==========================================\n")
-                        return result
-                    except Exception as e4:
-                        if self.debug:
-                            print(f"DIRECT CALL ERROR: {str(e4)}")
-
+                    # Show the response without the tool summary prefix
                     if self.debug:
-                        print("All invocation attempts failed!")
-                        print("==========================================\n")
-                    return f"Error: Failed to execute {action} tool after multiple attempts"
+                        print(f"\nDEBUG - FINAL RESPONSE: {final_response}")
 
-                except Exception as e:
+                    # Execute the action to display the message to the user and add it to history
+                    action_results = self.action_executor.execute_actions(actions)
+                    self.conversation_state.add_action_results(action_results)
+
+                    # Add the assistant's response to the message history explicitly
+                    self.conversation_state.add_assistant_message(final_response)
+
+                    # Mark the conversation turn as complete
+                    self.conversation_state.finalize_turn()
+                    continue_conversation = False
+
+                # Only execute actions if this is not a final response (we already executed it above)
+                elif continue_conversation:
+                    # Execute the actions
                     if self.debug:
-                        print(f"OVERALL ERROR: {str(e)}")
-                        print("==========================================\n")
-                    return f"Error executing tool {action}: {str(e)}"
+                        print("\nDEBUG - Executing action sequence")
 
-                return result
+                    # Execute all actions in sequence
+                    action_results = self.action_executor.execute_actions(actions)
 
-            except Exception as e:
-                if self.debug:
-                    import traceback
-                    print(f"Error parsing JSON: {str(e)}")
-                    print(traceback.format_exc())
+                    # Store the results for the next round
+                    self.conversation_state.add_action_results(action_results)
 
-                # If JSON parsing failed, treat the entire response as a message
-                return f"Error processing response: {str(e)}"
+                    # Check if we should continue
+                    continue_conversation = self.conversation_state.should_continue_action_sequence()
+
+                # If we're not continuing, get the last response message
+                if not continue_conversation:
+                    # Find the last respond action
+                    for result in reversed(action_results):
+                        if result["action"] == "respond":
+                            final_response = result.get("result", "Action completed")
+                            break
+
+            return final_response
 
         except Exception as e:
             if self.debug:
                 import traceback
-                print(f"Error in chat: {str(e)}")
+                print(f"\nDEBUG - ERROR IN CHAT: {str(e)}")
                 print(traceback.format_exc())
-            return f"An error occurred: {str(e)}"
+
+            return f"An error occurred while processing your request: {str(e)}"
+        
+    def format_action_results(self, results):
+        """Format action results more clearly for the model"""
+        formatted = []
+        for i, result in enumerate(results):
+            action_name = result.get('action', 'unknown')
+            status = "SUCCESS" if "error" not in result else "FAILED"
+            
+            # Format based on action type for better clarity
+            if action_name == "list_files":
+                formatted.append(f"✓ ACTION {i+1}: Listed files in directory '{result.get('parameters', {}).get('directory', 'unknown')}' - {status}")
+                if status == "SUCCESS" and 'result' in result:
+                    # Include a short summary of the results
+                    files_count = result['result'].count('📄')
+                    dirs_count = result['result'].count('📁')
+                    formatted.append(f"  Found {files_count} files and {dirs_count} directories")
+            elif action_name == "read_file":
+                file_path = result.get('parameters', {}).get('file_path', 'unknown')
+                formatted.append(f"✓ ACTION {i+1}: Read file '{file_path}' - {status}")
+                if status == "FAILED" and 'result' in result:
+                    formatted.append(f"  Error: {result['result']}")
+            else:
+                # Generic format for other actions
+                formatted.append(f"✓ ACTION {i+1}: Executed {action_name} - {status}")
+                
+        return "\n".join(formatted)

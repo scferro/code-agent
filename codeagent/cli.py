@@ -176,12 +176,12 @@ def chat(project_dir, model, verbose, debug):
         if user_input.lower() in ("exit", "quit", "bye"):
             break
             
-        with console.status("[bold yellow]Thinking...[/bold yellow]"):
-            response = agent.chat(user_input)
+        # Note: The action execution prints the responses directly
+        with console.status("[bold yellow]Processing...[/bold yellow]"):
+            agent.chat(user_input)
 
-        # Display the response in a more formatted way
-        console.print("\n[bold green]Agent Response:[/bold green]")
-        console.print(Markdown(response))
+        # Line break for next user input
+        console.print("")
 
 @cli_app.command()
 @click.option("--global", "scope", flag_value="global", help="Show global agent configuration")
