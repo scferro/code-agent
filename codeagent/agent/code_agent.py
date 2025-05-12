@@ -12,9 +12,8 @@ from langchain.schema import HumanMessage, AIMessage
 from rich.console import Console
 
 from codeagent.tools.file_tools import get_file_tools
-from codeagent.tools.code_tools import get_code_tools
 from codeagent.tools.execution_tools import get_execution_tools
-from codeagent.context.project_context import ProjectContext
+from codeagent.agent.project_context import ProjectContext
 from codeagent.agent.prompts import (
     get_agent_prompt,
 )
@@ -45,7 +44,7 @@ class CodeAgent:
         # Set up LLM
         self.llm = ChatOllama(
             model=model_name,
-            temperature=0.3,
+            temperature=0.5,
             format="json",
             verbose=verbose,
             num_predict=-2,
@@ -62,12 +61,10 @@ class CodeAgent:
         # Initialize tools
         try:
             file_tools = get_file_tools(self.project_context) or []
-            code_tools = get_code_tools(self.project_context) or []
             execution_tools = get_execution_tools(self.project_context) or []
 
             self.tools = [
                 *file_tools,
-                *code_tools,
                 *execution_tools
             ]
 
@@ -112,7 +109,7 @@ class CodeAgent:
         from langchain.agents import AgentType, initialize_agent
         
         # Get the system prompt from prompts.py
-        system_message = get_agent_prompt(self.project_context)
+        system_message = get_agent_prompt()
         
         # Initialize a structured chat agent with the ZERO_SHOT_REACT_DESCRIPTION agent
         from langchain.chains.conversation.memory import ConversationBufferWindowMemory
@@ -167,25 +164,6 @@ class CodeAgent:
         # Also set it on the action executor
         if hasattr(self, 'action_executor'):
             self.action_executor.set_tool_callback(callback)
-
-    def process_task(self, task_description):
-        """Process a coding task directly using the chat interface"""
-        try:
-            # Add initial system context from .agent.md files
-            static_context = self.project_context.get_static_context_summary()
-            if static_context:
-                self.memory.chat_memory.add_message(AIMessage(content=f"Project context loaded: {static_context}"))
-
-            # Simply use the chat method to process the task
-            print("[bold]Processing task...[/bold]")
-            solution = self.chat(task_description)
-
-            return solution
-        except Exception as e:
-            print(f"[bold red]Error during task processing:[/bold red] {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-            return f"An error occurred: {str(e)}"
     
     def chat(self, message: str) -> str:
         """Chat with the agent using sequential action protocol."""
@@ -214,7 +192,7 @@ class CodeAgent:
             final_response = "No response generated"
 
             # Get the system prompt
-            system_prompt = get_agent_prompt(self.project_context)
+            system_prompt = get_agent_prompt()
 
             while continue_conversation:
                 # Invoke the agent to get actions
@@ -253,7 +231,7 @@ class CodeAgent:
                     f"{system_prompt}\n\n"
                     f"{action_history}\n"
                     f"{conversation_history}"
-                    f"{last_message}\n"
+                    # f"{last_message}\n"
                 )
 
                 # Save the comprehensive message for debugging
@@ -366,6 +344,14 @@ class CodeAgent:
                 elif status == "SUCCESS" and 'result' in result:
                     # Include the file content for the model to use
                     formatted.append("\nFILE CONTENT:\n" + result['result'])
+            elif action_name == "write_file":
+                file_path = result.get('file_path', result.get('parameters', {}).get('file_path_content', 'unknown').split('|', 1)[0].strip() if '|' in result.get('parameters', {}).get('file_path_content', '') else result.get('parameters', {}).get('file_path_content', 'unknown'))
+                formatted.append(f"✓ ACTION {i+1}: Wrote file '{file_path}' - {status}")
+                if status == "FAILED" and 'result' in result:
+                    formatted.append(f"  Error: {result['result']}")
+                elif status == "SUCCESS" and 'content' in result:
+                    # Include the written file content for the model to use
+                    formatted.append("\nWRITTEN CONTENT:\n" + result['content'])
             elif action_name == "search_code":
                 formatted.append(f"✓ ACTION {i+1}: Searched for '{result.get('parameters', {}).get('query', 'unknown')}' - {status}")
                 if status == "SUCCESS" and 'result' in result:
