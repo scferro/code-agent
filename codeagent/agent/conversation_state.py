@@ -89,15 +89,15 @@ class ConversationState:
             actions: List of action dictionaries
 
         Returns:
-            True if this is a terminal response ONLY if end_turn is present
+            True if this is a terminal response ONLY if request_feedback is present
         """
         # Check if the task has been marked as complete
         if self.task_complete:
             return True
 
-        # ONLY check for end_turn action - this is the only way to end a turn
+        # ONLY check for request_feedback action - this is the only way to end a turn
         for action in actions:
-            if action.get("action") == "end_turn":
+            if action.get("action") == "request_feedback":
                 return True
 
         # All other responses should continue the conversation

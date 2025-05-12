@@ -1,13 +1,9 @@
 """Main agent class that orchestrates the coding assistant"""
 import os
 from pathlib import Path
-import time
-from typing import List, Dict, Any, Optional
 
 from langchain_ollama import ChatOllama
-from langchain.memory import ConversationBufferMemory
-from langchain.agents import initialize_agent, AgentType
-from langchain.schema import HumanMessage, AIMessage
+from langchain.agents import AgentType, initialize_agent
 
 from rich.console import Console
 
@@ -56,12 +52,6 @@ class CodeAgent:
             num_ctx=32768
         )
 
-        # Set up memory
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-
         # Initialize tools
         try:
             file_tools = get_file_tools(self.project_context) or []
@@ -108,10 +98,7 @@ class CodeAgent:
         self._create_agent()
     
     def _create_agent(self):
-        """Create the LangChain agent with the specified tools"""
-        # Use the structured chat agent
-        from langchain.agents import AgentType, initialize_agent
-        
+        """Create the LangChain agent with the specified tools"""        
         # Get the system prompt from prompts.py
         system_message = get_agent_prompt()
         
@@ -255,7 +242,7 @@ class CodeAgent:
                             action_list.append(f"Action {i+1}: Searched for '{query}' - {status}")
                         elif action_name == "respond":
                             action_list.append(f"Action {i+1}: Responded to user - {status}")
-                        elif action_name == "end_turn":
+                        elif action_name == "request_feedback":
                             action_list.append(f"Action {i+1}: Ended turn - {status}")
                         else:
                             params = action.get('parameters', {})
@@ -312,7 +299,7 @@ class CodeAgent:
                     print(f"\nDEBUG - PARSED ACTIONS ({len(actions)}):")
                     print(self.json_parser.format_for_agent(actions))
 
-                # Check if this is a final response (only respond action or end_turn)
+                # Check if this is a final response (only respond action or request_feedback)
                 is_final = self.conversation_state.is_final_response(actions)
 
                 if is_final:
@@ -323,10 +310,10 @@ class CodeAgent:
                     action_results = self.action_executor.execute_actions(actions, self.conversation_state)
                     self.conversation_state.add_action_results(action_results)
 
-                    # Get the final message to return (from respond or end_turn action)
+                    # Get the final message to return (from respond or request_feedback action)
                     final_message = None
                     for action in actions:
-                        if action["action"] in ["respond", "end_turn"]:
+                        if action["action"] in ["respond", "request_feedback"]:
                             final_message = action["parameters"].get("message", "Task completed.")
                             break
 
@@ -453,10 +440,6 @@ class CodeAgent:
             except Exception as e:
                 if self.debug:
                     print(f"Error during model cleanup: {e}")
-
-        # Clear memory
-        if hasattr(self, 'memory'):
-            self.memory.clear()
 
         # Clear conversation state
         if hasattr(self, 'conversation_state'):

@@ -1,7 +1,6 @@
 """Action Executor for sequential processing of model actions."""
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any
 import json
-import logging
 
 from rich.console import Console
 
@@ -64,8 +63,8 @@ class ActionExecutor:
                 })
                 continue
                 
-            # Special case for end_turn action
-            if action_name == "end_turn" and conversation_state:
+            # Special case for request_feedback action
+            if action_name == "request_feedback" and conversation_state:
                 message = parameters.get("message", "Task completed.")
                 console.print(f"[bold green]Agent:[/bold green] {message}")
                 
@@ -74,7 +73,7 @@ class ActionExecutor:
                 
                 # Return result for this action
                 results.append({
-                    "action": "end_turn",
+                    "action": "request_feedback",
                     "result": "Turn ended successfully",
                     "original_parameters": parameters,
                     "message": message
@@ -296,7 +295,7 @@ class ActionExecutor:
         elif action_name == "search_code" and "query" in parameters:
             return f"Searching for '{parameters['query']}'"
             
-        elif action_name == "end_turn":
+        elif action_name == "request_feedback":
             return "Ending agent turn"
 
         else:
