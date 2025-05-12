@@ -1,5 +1,5 @@
 """Conversation state management for multi-round interactions."""
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass, field
 
 
@@ -16,6 +16,9 @@ class ConversationState:
     # History of action results from previous turns
     action_history: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Only the most recent action result
+    latest_action_result: Optional[Dict[str, Any]] = None
+
     # Results from the most recent action sequence
     current_action_results: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -30,6 +33,15 @@ class ConversationState:
 
     # Flag to indicate whether the task is complete
     task_complete: bool = False
+
+    # Set of explored directories
+    explored_directories: Set[str] = field(default_factory=set)
+
+    # File system context - directory tree structure
+    file_system_context: Dict[str, Any] = field(default_factory=dict)
+
+    # Code context - maps file paths to content
+    code_context: Dict[str, str] = field(default_factory=dict)
     
     def add_user_message(self, message: str) -> None:
         """Add a user message to the history.
@@ -57,12 +69,17 @@ class ConversationState:
     
     def add_action_results(self, results: List[Dict[str, Any]]) -> None:
         """Add action results to the history.
-        
+
         Args:
             results: List of action result dictionaries
         """
         self.current_action_results = results
         self.action_history.extend(results)
+
+        # Store only the most recent result for prompt display
+        if results:
+            self.latest_action_result = results[-1]
+
         self.state = "awaiting_further_actions"
     
     def is_final_response(self, actions: List[Dict[str, Any]]) -> bool:
@@ -128,3 +145,75 @@ class ConversationState:
     def is_task_complete(self) -> bool:
         """Check if the current task is complete."""
         return self.task_complete
+
+    def mark_directory_explored(self, path: str) -> None:
+        """Mark a directory as explored.
+
+        Args:
+            path: The path to the directory that has been explored
+        """
+        self.explored_directories.add(path)
+
+    def update_file_system_context(self, path: str, structure: Dict[str, Any]) -> None:
+        """Update file system context with new directory structure.
+
+        Args:
+            path: The path to the directory
+            structure: The directory structure data
+        """
+        self.file_system_context[path] = structure
+
+    def update_code_context(self, file_path: str, content: str) -> None:
+        """Update code context with file content.
+
+        Args:
+            file_path: The path to the file
+            content: The content of the file
+        """
+        self.code_context[file_path] = content
+
+    def get_file_system_context_string(self) -> str:
+        """Get file system context as a formatted string for the prompt.
+
+        Returns:
+            A formatted string representation of the file system context
+        """
+        if not self.file_system_context:
+            return "No directories have been explored yet."
+
+        # Format the directory structure as a string
+        result = []
+        for path, structure in self.file_system_context.items():
+            if isinstance(structure, dict) and "children" in structure:
+                result.append(f"📁 {path}/")
+                for child in structure.get("children", []):
+                    prefix = "    "
+                    if child.get("type") == "directory":
+                        result.append(f"{prefix}📁 {child.get('name', '')}/")
+                    else:
+                        result.append(f"{prefix}📄 {child.get('name', '')}")
+
+        return "\n".join(result) if result else "No file system structure available."
+
+    def get_code_context_string(self) -> str:
+        """Get code context as a formatted string for the prompt.
+
+        Returns:
+            A formatted string representation of the code context
+        """
+        if not self.code_context:
+            return "No code files have been accessed yet."
+
+        result = []
+        for file_path, content in self.code_context.items():
+            result.append(f"=== {file_path} ===")
+            result.append(content)
+            result.append("")  # Empty line for separation
+
+        return "\n".join(result)
+
+    def reset_task(self) -> None:
+        """Reset task-related state for a new task."""
+        self.task_metadata = {}
+        self.task_complete = False
+        # Don't reset file_system_context and code_context to maintain context across tasks

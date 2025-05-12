@@ -16,6 +16,10 @@ from codeagent.tools.execution_tools import get_execution_tools
 from codeagent.agent.project_context import ProjectContext
 from codeagent.agent.prompts import (
     get_agent_prompt,
+    get_code_prompt,
+    get_action_hist_prompt,
+    get_file_system_prompt,
+    get_previous_action_prompt
 )
 from codeagent.agent.json_parser import JsonResponseParser
 from codeagent.agent.action_executor import ActionExecutor
@@ -216,12 +220,59 @@ class CodeAgent:
                                 conversation_history += f"ASSISTANT: {assistant_message}\n"
                                 assistant_responses.append(assistant_message)
 
-                # Format action history with clear SUCCESS/FAILURE indicators
-                action_history = "\n\n=== PREVIOUS ACTIONS COMPLETED ===\n"
+                # Build file system context
+                file_system_context = "\n\n=== FILE SYSTEM CONTEXT ===\n"
+                file_system_context += get_file_system_prompt()
+                file_system_tree = self.project_context.build_full_directory_tree(self.conversation_state)
+                file_system_context += self.project_context.format_directory_tree_as_string(file_system_tree)
+
+                # Build code context
+                code_context = "\n\n=== CODE CONTEXT ===\n"
+                code_context += get_code_prompt()
+                code_context += self.conversation_state.get_code_context_string()
+
+                # Format action history without showing results
+                action_history = "\n\n=== ACTION HISTORY ===\n"
+                action_history += get_action_hist_prompt()
                 if self.conversation_state.action_history:
-                    action_history += self.format_action_results(self.conversation_state.action_history)
+                    action_list = []
+                    for i, action in enumerate(self.conversation_state.action_history):
+                        action_name = action.get('action', 'unknown')
+                        status = "SUCCESS" if "error" not in action else "FAILED"
+
+                        # Create a simple action summary without results
+                        if action_name == "read_file":
+                            file_path = action.get('parameters', {}).get('file_path', 'unknown')
+                            action_list.append(f"Action {i+1}: Read file '{file_path}' - {status}")
+                        elif action_name == "write_file":
+                            file_path = action.get('file_path', action.get('parameters', {}).get('file_path_content', 'unknown').split('|', 1)[0].strip() if '|' in action.get('parameters', {}).get('file_path_content', '') else action.get('parameters', {}).get('file_path_content', 'unknown'))
+                            action_list.append(f"Action {i+1}: Wrote file '{file_path}' - {status}")
+                        elif action_name == "list_files":
+                            dir_path = action.get('parameters', {}).get('directory', '.')
+                            action_list.append(f"Action {i+1}: Listed files in '{dir_path}' - {status}")
+                        elif action_name == "search_code":
+                            query = action.get('parameters', {}).get('query', 'unknown')
+                            action_list.append(f"Action {i+1}: Searched for '{query}' - {status}")
+                        elif action_name == "respond":
+                            action_list.append(f"Action {i+1}: Responded to user - {status}")
+                        elif action_name == "end_turn":
+                            action_list.append(f"Action {i+1}: Ended turn - {status}")
+                        else:
+                            params = action.get('parameters', {})
+                            param_str = ", ".join(f"{k}={v}" for k, v in params.items())
+                            action_list.append(f"Action {i+1}: {action_name}({param_str}) - {status}")
+
+                    action_history += "\n".join(action_list)
                 else:
                     action_history += "No previous actions.\n"
+
+                # Format latest action result
+                latest_action_result = "\n\n=== PREVIOUS ACTION RESULT ===\n"
+                latest_action_result += get_previous_action_prompt()
+                if self.conversation_state.latest_action_result:
+                    latest_action_result += self.format_action_results([self.conversation_state.latest_action_result])
+                else:
+                    latest_action_result += "No previous action results.\n"
 
                 # Task-specific context
                 last_message = f"\n\n=== LAST MESSAGE FROM USER ===\n{message}\n"
@@ -229,7 +280,10 @@ class CodeAgent:
                 # Add to the comprehensive prompt
                 comprehensive_prompt = (
                     f"{system_prompt}\n\n"
+                    f"{file_system_context}\n\n"
+                    f"{code_context}\n\n"
                     f"{action_history}\n"
+                    f"{latest_action_result}\n"
                     f"{conversation_history}"
                     # f"{last_message}\n"
                 )
@@ -320,46 +374,56 @@ class CodeAgent:
             return f"An error occurred while processing your request: {str(e)}"
         
     def format_action_results(self, results):
-        """Format action results more clearly for the model"""
-        formatted = []
-        for i, result in enumerate(results):
-            action_name = result.get('action', 'unknown')
-            status = "SUCCESS" if "error" not in result else "FAILED"
+        """Format action results more clearly for the model.
 
-            # Format based on action type for better clarity
-            if action_name == "list_files":
-                formatted.append(f"✓ ACTION {i+1}: Listed files in directory '{result.get('parameters', {}).get('directory', 'unknown')}' - {status}")
-                if status == "SUCCESS" and 'result' in result:
-                    # Include a short summary of the results
-                    files_count = result['result'].count('📄')
-                    dirs_count = result['result'].count('📁')
-                    formatted.append(f"  Found {files_count} files and {dirs_count} directories")
-                    # Include the full file listing result for the model to use
-                    formatted.append("\nFILE STRUCTURE:\n" + result['result'])
-            elif action_name == "read_file":
-                file_path = result.get('parameters', {}).get('file_path', 'unknown')
-                formatted.append(f"✓ ACTION {i+1}: Read file '{file_path}' - {status}")
-                if status == "FAILED" and 'result' in result:
-                    formatted.append(f"  Error: {result['result']}")
-                elif status == "SUCCESS" and 'result' in result:
-                    # Include the file content for the model to use
-                    formatted.append("\nFILE CONTENT:\n" + result['result'])
-            elif action_name == "write_file":
-                file_path = result.get('file_path', result.get('parameters', {}).get('file_path_content', 'unknown').split('|', 1)[0].strip() if '|' in result.get('parameters', {}).get('file_path_content', '') else result.get('parameters', {}).get('file_path_content', 'unknown'))
-                formatted.append(f"✓ ACTION {i+1}: Wrote file '{file_path}' - {status}")
-                if status == "FAILED" and 'result' in result:
-                    formatted.append(f"  Error: {result['result']}")
-                elif status == "SUCCESS" and 'content' in result:
-                    # Include the written file content for the model to use
-                    formatted.append("\nWRITTEN CONTENT:\n" + result['content'])
-            elif action_name == "search_code":
-                formatted.append(f"✓ ACTION {i+1}: Searched for '{result.get('parameters', {}).get('query', 'unknown')}' - {status}")
-                if status == "SUCCESS" and 'result' in result:
-                    # Include the search results for the model to use
-                    formatted.append("\nSEARCH RESULTS:\n" + result['result'])
-            else:
-                # Generic format for other actions
-                formatted.append(f"✓ ACTION {i+1}: Executed {action_name} - {status}")
+        Only formats the most recent action result.
+        """
+        if not results:
+            return "No actions completed."
+
+        # Get the most recent result
+        result = results[-1]
+
+        formatted = []
+        action_name = result.get('action', 'unknown')
+        status = "SUCCESS" if "error" not in result else "FAILED"
+
+        # Format based on action type for better clarity
+        if action_name == "list_files":
+            formatted.append(f"✓ Latest action: Listed files in directory '{result.get('parameters', {}).get('directory', 'unknown')}' - {status}")
+            if status == "SUCCESS" and 'result' in result:
+                # Include a short summary of the results
+                files_count = result['result'].count('📄')
+                dirs_count = result['result'].count('📁')
+                formatted.append(f"  Found {files_count} files and {dirs_count} directories")
+                # Include a brief summary, the full structure will be in FILE SYSTEM CONTEXT
+                formatted.append(f"  Check the FILE SYSTEM CONTEXT section for the complete directory structure.")
+        elif action_name == "read_file":
+            file_path = result.get('parameters', {}).get('file_path', 'unknown')
+            formatted.append(f"✓ Latest action: Read file '{file_path}' - {status}")
+            if status == "FAILED" and 'result' in result:
+                formatted.append(f"  Error: {result['result']}")
+            elif status == "SUCCESS":
+                # Don't include content here - it will be in CODE CONTEXT
+                formatted.append(f"  Check the CODE CONTEXT section for the content of this file.")
+        elif action_name == "write_file":
+            file_path = result.get('file_path', result.get('parameters', {}).get('file_path_content', 'unknown').split('|', 1)[0].strip() if '|' in result.get('parameters', {}).get('file_path_content', '') else result.get('parameters', {}).get('file_path_content', 'unknown'))
+            formatted.append(f"✓ Latest action: Wrote file '{file_path}' - {status}")
+            if status == "FAILED" and 'result' in result:
+                formatted.append(f"  Error: {result['result']}")
+            elif status == "SUCCESS":
+                # Don't include content here - it will be in CODE CONTEXT
+                formatted.append(f"  Check the CODE CONTEXT section for the content of this file.")
+        elif action_name == "search_code":
+            formatted.append(f"✓ Latest action: Searched for '{result.get('parameters', {}).get('query', 'unknown')}' - {status}")
+            if status == "SUCCESS" and 'result' in result:
+                # Include the search results for the model to use
+                formatted.append("\nSEARCH RESULTS:\n" + result['result'])
+        else:
+            # Generic format for other actions
+            formatted.append(f"✓ Latest action: Executed {action_name} - {status}")
+            if status == "SUCCESS" and 'result' in result:
+                formatted.append(f"  Result: {result['result']}")
 
         return "\n".join(formatted)
 

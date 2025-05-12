@@ -105,15 +105,16 @@ class ActionExecutor:
                 console.print(f"[dim][Action]:[/dim] {action_summary}")
                 
                 # Execute the tool based on its type and parameters
-                result = self._execute_tool(tool, action_name, parameters)
+                result = self._execute_tool(tool, action_name, parameters, conversation_state)
                 
                 # Add the result to the results list
                 result_entry = {
                     "action": action_name,
-                    "result": result
+                    "result": result,
+                    "parameters": parameters  # Store parameters for all actions by default
                 }
 
-                # Add written code to the log for write_file actions
+                # Add code context for file operations
                 if action_name == "write_file" and "file_path_content" in parameters:
                     try:
                         file_path_content = parameters["file_path_content"]
@@ -121,12 +122,65 @@ class ActionExecutor:
                             parts = file_path_content.split('|', 1)
                             file_path = parts[0].strip()
                             content = parts[1] if len(parts) > 1 else ""
+
                             # Store the file path and content in the result
                             result_entry["file_path"] = file_path
                             result_entry["content"] = content
+
+                            # Update conversation state's code context if provided
+                            if conversation_state and hasattr(conversation_state, 'update_code_context'):
+                                conversation_state.update_code_context(file_path, content)
+
+                                # Also track the parent directory as explored
+                                parent_dir = str((self.project_context.project_dir / file_path).parent.relative_to(self.project_context.project_dir))
+                                if parent_dir:
+                                    self.project_context.track_dir_exploration(parent_dir, conversation_state, recursive=False)
                     except Exception as e:
                         if self.debug:
-                            console.print(f"[dim]Error extracting write_file content: {str(e)}[/dim]")
+                            console.print(f"[dim]Error handling write_file content: {str(e)}[/dim]")
+
+                # Track read file operations
+                elif action_name == "read_file" and "file_path" in parameters:
+                    file_path = parameters["file_path"]
+
+                    # Store the file path in the result entry so it's available in action history
+                    result_entry["parameters"] = parameters
+
+                    # Update conversation state if provided
+                    if conversation_state and "result" in result_entry and not "error" in result_entry:
+                        # Extract content from the result (may need adjustment based on format)
+                        try:
+                            # Track that this file has been explored with conversation state
+                            self.project_context.track_file_exploration(file_path, conversation_state)
+                        except Exception as e:
+                            if self.debug:
+                                console.print(f"[dim]Error tracking read_file: {str(e)}[/dim]")
+
+                # Track list_files operations to update file system context
+                elif action_name == "list_files" and "directory" in parameters:
+                    dir_path = parameters.get("directory", ".")
+                    recursive = parameters.get("recursive", False)
+                    max_depth = parameters.get("max_depth", 3)
+
+                    # Store the parameters in the result entry so they're available in action history
+                    result_entry["parameters"] = parameters
+
+                    # Update conversation state if provided
+                    if conversation_state and "result" in result_entry and not "error" in result_entry:
+                        try:
+                            # Track that this directory has been explored with conversation state
+                            self.project_context.track_dir_exploration(
+                                dir_path,
+                                conversation_state,
+                                recursive=recursive,
+                                max_depth=max_depth
+                            )
+
+                            # Rebuild the full directory tree for all explored directories
+                            self.project_context.build_full_directory_tree(conversation_state)
+                        except Exception as e:
+                            if self.debug:
+                                console.print(f"[dim]Error tracking list_files: {str(e)}[/dim]")
 
                 results.append(result_entry)
                 
@@ -145,14 +199,15 @@ class ActionExecutor:
                 
         return results
     
-    def _execute_tool(self, tool, action_name: str, parameters: Dict[str, Any]) -> str:
+    def _execute_tool(self, tool, action_name: str, parameters: Dict[str, Any], conversation_state=None) -> str:
         """Execute a single tool with appropriate parameter handling.
-        
+
         Args:
             tool: The tool object to execute
             action_name: The name of the action/tool
             parameters: Dictionary of parameters for the tool
-            
+            conversation_state: Optional conversation state for tracking context
+
         Returns:
             String result from the tool execution
         """
@@ -164,11 +219,21 @@ class ActionExecutor:
                 parts = file_path_content.split('|', 1)
                 file_path = parts[0].strip()
                 content = parts[1] if len(parts) > 1 else ""
-                
+
                 # Create the file directly
                 full_path = self.project_context.project_dir / file_path
                 full_path.parent.mkdir(parents=True, exist_ok=True)
                 full_path.write_text(content)
+
+                # Update conversation state if provided
+                if conversation_state and hasattr(conversation_state, 'update_code_context'):
+                    conversation_state.update_code_context(file_path, content)
+
+                    # Also track parent directory as explored
+                    parent_dir = str(full_path.parent.relative_to(self.project_context.project_dir))
+                    if parent_dir:
+                        self.project_context.track_dir_exploration(parent_dir, conversation_state, recursive=False)
+
                 return f"Successfully wrote to {file_path}"
             
         # Try multiple approaches for executing the tool
