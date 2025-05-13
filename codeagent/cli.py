@@ -157,7 +157,7 @@ def task(task_description, project_dir, model, verbose, debug):
 
 @cli_app.command()
 @click.option("--project-dir", "-p", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--model", "-m", help="Ollama model to use", default="gemma3:27b")
+@click.option("--model", "-m", help="Ollama model to use", default="gemma3:27b-it-qat")
 @click.option("--verbose/--quiet", "-v/-q", default=False, help="Show detailed processing logs")
 @click.option("--debug", is_flag=True, default=False, help="Enable debug output")
 def chat(project_dir, model, verbose, debug):

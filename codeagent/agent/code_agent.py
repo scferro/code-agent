@@ -48,7 +48,6 @@ class CodeAgent:
             format="json",
             verbose=verbose,
             num_predict=-2,
-            cache=False,
             num_ctx=32768
         )
 
