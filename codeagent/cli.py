@@ -113,10 +113,10 @@ def chat(project_dir, model, verbose, debug):
     project_path = Path(project_dir).absolute()
     console.print(f"Starting chat session in [bold]{project_path}[/bold]")
 
-    # Initialize agent as MASTER agent by default
+    # Initialize agent as MAIN agent by default
     console.print("[bold yellow]Initializing agent...[/bold yellow]")
     from codeagent.agent.conversation_state import AgentType
-    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug, agent_type=AgentType.MASTER)
+    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug, agent_type=AgentType.MAIN)
 
     try:
         # Start chat loop

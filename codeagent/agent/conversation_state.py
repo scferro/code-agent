@@ -6,9 +6,8 @@ from copy import deepcopy
 
 class AgentType(Enum):
     """Enum for different agent types."""
-    MASTER = "master"
-    CODER = "coder"
-    DEEP_THINKER = "deep_thinker"
+    MAIN = "main"
+    SUB = "sub"
 
 
 @dataclass
@@ -52,13 +51,12 @@ class ConversationState:
     code_context: Dict[str, str] = field(default_factory=dict)
     
     # Current active agent
-    current_agent: AgentType = AgentType.MASTER
+    current_agent: AgentType = AgentType.MAIN
     
     # Dictionary mapping agent types to their respective state information
     agent_states: Dict[AgentType, Dict[str, Any]] = field(default_factory=lambda: {
-        AgentType.MASTER: {"messages": [], "actions": []},
-        AgentType.CODER: {"messages": [], "actions": []},
-        AgentType.DEEP_THINKER: {"messages": [], "actions": []}
+        AgentType.MAIN: {"messages": [], "actions": []},
+        AgentType.SUB: {"messages": [], "actions": []}
     })
     
     def add_user_message(self, message: str) -> None:
@@ -264,14 +262,15 @@ class ConversationState:
         
         # For sub-agents, we maintain file_system_context and code_context,
         # but we reset their message and action history
-        if agent_type != AgentType.MASTER:
-            self.message_history = deepcopy(agent_state.get("messages", []))
-            self.action_history = deepcopy(agent_state.get("actions", []))
-            self.latest_action_result = deepcopy(agent_state.get("latest_result"))
-            self.current_action_results = deepcopy(agent_state.get("current_results", []))
-            self.state = agent_state.get("state", "awaiting_user_input")
+        if agent_type == AgentType.SUB:
+            # Sub-agent gets clean conversation and action history but shares file context
+            self.message_history = []
+            self.action_history = []
+            self.latest_action_result = None
+            self.current_action_results = []
+            self.state = "awaiting_user_input"
         else:
-            # For master agent, restore full state
+            # For main agent, restore full state
             self.message_history = deepcopy(agent_state.get("messages", self.message_history))
             self.action_history = deepcopy(agent_state.get("actions", self.action_history))
             self.latest_action_result = deepcopy(agent_state.get("latest_result", self.latest_action_result))

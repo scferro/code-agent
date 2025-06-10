@@ -70,14 +70,12 @@ class ActionExecutor:
             
             # Special case for invoke_agent action
             if action_name == "invoke_agent" and conversation_state:
-                agent_type_str = parameters.get("agent_type", "").lower()
+                agent_type_str = parameters.get("agent_type", "")
                 prompt = parameters.get("prompt", "No prompt provided.")
                 
-                # Convert string to enum
-                try:
-                    agent_type = AgentType(agent_type_str)
-                except ValueError:
-                    error_msg = f"Invalid agent type: {agent_type_str}"
+                # Only accept "sub_agent" 
+                if agent_type_str != "sub_agent":
+                    error_msg = f"Invalid agent type: {agent_type_str}. Only 'sub_agent' is supported."
                     console.print(f"[bold red]Error:[/bold red] {error_msg}")
                     results.append({
                         "action": "invoke_agent",
@@ -86,21 +84,13 @@ class ActionExecutor:
                     })
                     continue
                 
-                if agent_type == AgentType.DEEP_THINKER:
-                    console.print(f"[bold blue]Exploring the codebase...[/bold blue]")
-                elif agent_type == AgentType.CODER: 
-                    console.print(f"[bold blue]Generating code...[/bold blue]")
-                else:
-                    console.print(f"[bold blue]Switching to {agent_type.value} agent[/bold blue]")
+                console.print(f"[bold blue]Delegating task to sub-agent...[/bold blue]")
                 
                 # Store the current state before switching
                 conversation_state.store_agent_state()
                 
-                # Switch to the new agent
-                conversation_state.switch_agent(agent_type)
-                
-                # Tell the CodeAgent instance to update its tools based on new agent type
-                # This will happen when it checks self.agent_type = self.conversation_state.current_agent
+                # Switch to the sub agent
+                conversation_state.switch_agent(AgentType.SUB)
                 
                 # Store the prompt for the subagent
                 conversation_state.store_task_data("subagent_prompt", prompt)
@@ -108,38 +98,31 @@ class ActionExecutor:
                 # Return result for this action
                 results.append({
                     "action": "invoke_agent",
-                    "result": f"Switched to {agent_type.value} agent",
+                    "result": f"Switched to sub-agent",
                     "parameters": parameters
                 })
                 continue
             
             # Special case for respond_to_master action
             if action_name == "respond_to_master" and conversation_state:
-                # There was a bug where the parameter names weren't consistent
-                # This fixes it by checking both possible parameter names
                 response = parameters.get("response", "No response provided.")
                 
                 # Store the current sub-agent's result
                 current_agent = conversation_state.current_agent
                 conversation_state.store_task_data(f"{current_agent.value}_result", response)
                 
-                if current_agent.value=="deep_thinker":
-                    console.print("[bold blue]Summarizing thoughts...[/bold blue]")
-                elif current_agent.value=="coder":
-                    console.print("[bold blue]Reviewing and finalizing new code...[/bold blue]")
-                else:
-                    console.print(f"[bold blue]{current_agent.value} agent responding to master[/bold blue]")
+                console.print("[bold blue]Sub-agent task completed, returning to main agent...[/bold blue]")
                 
                 # Store the current state before switching back
                 conversation_state.store_agent_state()
                 
-                # Switch back to the master agent
-                conversation_state.switch_agent(AgentType.MASTER)
+                # Switch back to the main agent
+                conversation_state.switch_agent(AgentType.MAIN)
                 
                 # Return result for this action
                 results.append({
                     "action": "respond_to_master",
-                    "result": f"Returned to master agent with response from {current_agent.value} agent",
+                    "result": f"Returned to main agent with response from {current_agent.value} agent",
                     "parameters": parameters
                 })
                 continue

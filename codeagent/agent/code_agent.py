@@ -15,9 +15,8 @@ from codeagent.agent.prompts import (
     get_action_hist_prompt,
     get_file_system_prompt,
     get_previous_action_prompt,
-    get_master_agent_prompt,
-    get_coder_prompt,
-    get_deep_thinker_prompt
+    get_main_agent_prompt,
+    get_sub_agent_prompt
 )
 from codeagent.agent.json_parser import JsonResponseParser
 from codeagent.agent.action_executor import ActionExecutor
@@ -36,8 +35,8 @@ class CodeAgent:
         self.tool_callback = None
         self._initialized = True
         
-        # Set the agent type (default to MASTER if not specified)
-        self.agent_type = agent_type if agent_type else AgentTypeEnum.MASTER
+        # Set the agent type (default to MAIN if not specified)
+        self.agent_type = agent_type if agent_type else AgentTypeEnum.MAIN
 
         # Initialize context
         self.project_context = ProjectContext(project_dir)
@@ -122,12 +121,10 @@ class CodeAgent:
                     print(f"\nDEBUG - Invoking agent for next actions (Agent: {self.agent_type.value})")
             
                 # Get the appropriate system prompt based on agent type
-                if self.agent_type == AgentTypeEnum.MASTER:
-                    system_prompt = get_master_agent_prompt()
-                elif self.agent_type == AgentTypeEnum.CODER:
-                    system_prompt = get_coder_prompt()
-                elif self.agent_type == AgentTypeEnum.DEEP_THINKER:
-                    system_prompt = get_deep_thinker_prompt()
+                if self.agent_type == AgentTypeEnum.MAIN:
+                    system_prompt = get_main_agent_prompt()
+                elif self.agent_type == AgentTypeEnum.SUB:
+                    system_prompt = get_sub_agent_prompt()
 
                 # Format conversation history
                 conversation_history = "\n\n=== CONVERSATION HISTORY ===\n"
@@ -136,20 +133,19 @@ class CodeAgent:
                     content = msg["content"]
                     conversation_history += f"{role.upper()}: {content}\n"
                 
-                # For the master agent, include results from sub-agents in the conversation context
+                # For the main agent, include results from sub-agents in the conversation context
                 subagent_results = ""
-                if self.agent_type == AgentTypeEnum.MASTER:
+                if self.agent_type == AgentTypeEnum.MAIN:
                     subagent_results = "\n\n=== SUB-AGENT RESULTS ===\n"
-                    for agent_type in [AgentTypeEnum.CODER, AgentTypeEnum.DEEP_THINKER]:
-                        result = self.conversation_state.get_task_data(f"{agent_type.value}_result")
-                        if result:
-                            subagent_results += f"--- {agent_type.value.upper()} RESULT ---\n{result}\n\n"
-                    if subagent_results == "\n\n=== SUB-AGENT RESULTS ===\n":
+                    result = self.conversation_state.get_task_data("sub_result")
+                    if result:
+                        subagent_results += f"--- SUB-AGENT RESULT ---\n{result}\n\n"
+                    else:
                         subagent_results = ""
                 
                 # For sub-agents, include their specific prompt
                 subagent_prompt = ""
-                if self.agent_type != AgentTypeEnum.MASTER:
+                if self.agent_type == AgentTypeEnum.SUB:
                     prompt = self.conversation_state.get_task_data("subagent_prompt")
                     if prompt:
                         subagent_prompt = f"\n\n=== TASK PROMPT ===\n{prompt}\n"
@@ -160,9 +156,9 @@ class CodeAgent:
                 file_system_tree = self.project_context.build_full_directory_tree(self.conversation_state)
                 file_system_context += self.project_context.format_directory_tree_as_string(file_system_tree)
 
-                # Build code context - for master agent, only show files list, not content
+                # Build code context - for main agent, only show files list, not content
                 code_context = "\n\n=== CODE CONTEXT ===\n"
-                if self.agent_type == AgentTypeEnum.MASTER:
+                if self.agent_type == AgentTypeEnum.MAIN:
                     code_context += "Files that have been accessed:\n"
                     code_context += "\n".join([f"- {file_path}" for file_path in self.conversation_state.code_context.keys()])
                 else:
@@ -227,7 +223,7 @@ class CodeAgent:
                     latest_action_result += "No previous action results.\n"
 
                 # Add to the comprehensive prompt
-                if self.agent_type == AgentTypeEnum.MASTER:
+                if self.agent_type == AgentTypeEnum.MAIN:
                     comprehensive_prompt = (
                         f"{system_prompt}\n\n"
                         f"{file_system_context}\n\n"
