@@ -156,14 +156,10 @@ class CodeAgent:
                 file_system_tree = self.project_context.build_full_directory_tree(self.conversation_state)
                 file_system_context += self.project_context.format_directory_tree_as_string(file_system_tree)
 
-                # Build code context - for main agent, only show files list, not content
+                # Build code context - both agents get full file contents
                 code_context = "\n\n=== CODE CONTEXT ===\n"
-                if self.agent_type == AgentTypeEnum.MAIN:
-                    code_context += "Files that have been accessed:\n"
-                    code_context += "\n".join([f"- {file_path}" for file_path in self.conversation_state.code_context.keys()])
-                else:
-                    code_context += get_code_prompt()
-                    code_context += self.conversation_state.get_code_context_string()
+                code_context += get_code_prompt()
+                code_context += self.conversation_state.get_code_context_string()
 
                 # Format action history without showing results
                 action_history = "\n\n=== ACTION HISTORY ===\n"

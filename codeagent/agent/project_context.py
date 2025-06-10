@@ -268,32 +268,38 @@ class ProjectContext:
         return root_tree
 
     def format_directory_tree_as_string(self, tree: Dict[str, Any], prefix: str = "") -> str:
-        """Format a directory tree as a simple list of file paths.
+        """Format a directory tree showing both directories and files.
 
         Args:
             tree: The directory tree structure
             prefix: Current indentation prefix (used for recursion)
 
         Returns:
-            A formatted string with just the full file paths
+            A formatted string with directories and file paths
         """
         if not tree or not isinstance(tree, dict):
             return "Invalid tree structure"
 
         result = []
 
-        # Only process files, not directories
         node_type = tree.get("type", "unknown")
         path = tree.get("path", "")
 
         if node_type == "file":
-            # Just add the full file path
+            # Add the full file path
             result.append(path)
         elif node_type == "directory":
+            # Add the directory path if it's not the root
+            if path and path != ".":
+                result.append(f"{path}/")
+            
             # Process children recursively
             for child in tree.get("children", []):
                 child_result = self.format_directory_tree_as_string(child, prefix)
                 if child_result:
-                    result.append(child_result)
+                    # Split multi-line results and add each line separately
+                    for line in child_result.split('\n'):
+                        if line.strip():
+                            result.append(line)
 
         return "\n".join(result)
