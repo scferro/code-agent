@@ -8,31 +8,36 @@ from langchain.agents import AgentType, initialize_agent
 from rich.console import Console
 
 from codeagent.tools.file_tools import get_file_tools
-from codeagent.tools.execution_tools import get_execution_tools
+from codeagent.tools.agent_tools import get_agent_tools
 from codeagent.agent.project_context import ProjectContext
 from codeagent.agent.prompts import (
-    get_agent_prompt,
     get_code_prompt,
     get_action_hist_prompt,
     get_file_system_prompt,
-    get_previous_action_prompt
+    get_previous_action_prompt,
+    get_master_agent_prompt,
+    get_coder_prompt,
+    get_deep_thinker_prompt
 )
 from codeagent.agent.json_parser import JsonResponseParser
 from codeagent.agent.action_executor import ActionExecutor
-from codeagent.agent.conversation_state import ConversationState
+from codeagent.agent.conversation_state import ConversationState, AgentType as AgentTypeEnum
 
 console = Console()
 
 class CodeAgent:
     """Main agent class that orchestrates the coding assistant"""
 
-    def __init__(self, project_dir=".", model_name="gemma3:12b", verbose=True, debug=False):
+    def __init__(self, project_dir=".", model_name="devstral", verbose=True, debug=False, agent_type=None):
         self.project_dir = Path(project_dir).absolute()
         self.model_name = model_name
         self.verbose = verbose
         self.debug = debug
         self.tool_callback = None
         self._initialized = True
+        
+        # Set the agent type (default to MASTER if not specified)
+        self.agent_type = agent_type if agent_type else AgentTypeEnum.MASTER
 
         # Initialize context
         self.project_context = ProjectContext(project_dir)
@@ -40,6 +45,17 @@ class CodeAgent:
         # Initialize JSON parser and state management
         self.json_parser = JsonResponseParser()
         self.conversation_state = ConversationState()
+        
+        # Set the initial agent type in the conversation state
+        self.conversation_state.current_agent = self.agent_type
+        
+        # Get tools
+        file_tools = get_file_tools(self.project_context) or []
+        agent_tools = get_agent_tools() or []
+        self.tools = [
+            *file_tools,
+            *agent_tools
+        ]
 
         # Set up LLM
         self.llm = ChatOllama(
@@ -48,105 +64,17 @@ class CodeAgent:
             format="json",
             verbose=verbose,
             num_predict=-2,
-            num_ctx=32768
+            num_ctx=32768,
+            cache=False
         )
-
-        # Initialize tools
-        try:
-            file_tools = get_file_tools(self.project_context) or []
-            execution_tools = get_execution_tools(self.project_context) or []
-
-            self.tools = [
-                *file_tools,
-                *execution_tools
-            ]
-
-            # Create a tool map for easy lookup
-            self.tool_map = {}
-            for tool in self.tools:
-                self.tool_map[tool.name] = tool
-
-            # Initialize action executor
-            self.action_executor = ActionExecutor(self.tool_map, self.project_context, debug=debug)
-
-            if not self.tools:
-                print("Warning: No tools were loaded. Check your tool implementation files.")
-                # Provide at least an empty list
-                self.tools = []
-        except Exception as e:
-            print(f"Error loading tools: {e}")
-            import traceback
-            print(traceback.format_exc())
-            # Ensure we have at least an empty list
-            self.tools = []
-
-        # Debug tools before creating agent
-        if self.debug:
-            print("\n=========== TOOLS IN AGENT INIT ===========")
-            print(f"Total tools: {len(self.tools)}")
-            for i, t in enumerate(self.tools):
-                print(f"Tool {i}: {getattr(t, 'name', str(t))}")
-                print(f"Type: {type(t)}")
-                print(f"Has run: {hasattr(t, 'run')}")
-                print(f"Has invoke: {hasattr(t, 'invoke')}")
-                print(f"Has stop: {hasattr(t, 'stop')}")
-                print("---")
-            print("===========================================\n")
-
-        # Create agent
-        self._create_agent()
-    
-    def _create_agent(self):
-        """Create the LangChain agent with the specified tools"""        
-        # Get the system prompt from prompts.py
-        system_message = get_agent_prompt()
-        
-        # Initialize a structured chat agent with the ZERO_SHOT_REACT_DESCRIPTION agent
-        from langchain.chains.conversation.memory import ConversationBufferWindowMemory
-        
-        # Create a window memory to limit context size
-        window_memory = ConversationBufferWindowMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            k=5  # Remember last 5 exchanges
-        )
-        
-        # Debug before agent initialization
-        if self.debug:
-            print("\n=========== AGENT INITIALIZATION ===========")
-            print(f"Agent type: {AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION}")
-            print(f"LLM type: {type(self.llm)}")
-            print(f"Memory type: {type(window_memory)}")
-            print(f"Number of tools: {len(self.tools)}")
-            print("===========================================\n")
-
-        try:
-            # Try a different agent type
-            self.agent_executor = initialize_agent(
-                self.tools,
-                self.llm,
-                agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-                verbose=self.verbose,
-                memory=window_memory,
-                agent_kwargs={"system_message": system_message},
-                handle_parsing_errors=True,
-                max_iterations=30
-            )
-
-            if self.debug:
-                print("\n=========== AGENT CREATED SUCCESSFULLY ===========")
-                print(f"Agent type: {type(self.agent_executor)}")
-                print(f"Agent dir: {dir(self.agent_executor)[:10]}...")
-                print("=================================================\n")
-
-        except Exception as e:
-            if self.debug:
-                print(f"\n=========== AGENT CREATION FAILED ===========")
-                print(f"Error: {str(e)}")
-                import traceback
-                print(traceback.format_exc())
-                print("==============================================\n")
-            raise
+            
+        # Create a tool map for easy lookup
+        self.tool_map = {}
+        for tool in self.tools:
+            self.tool_map[tool.name] = tool
+            
+        # Update action executor with new tools
+        self.action_executor = ActionExecutor(self.tool_map, self.project_context, debug=self.debug)
     
     def set_tool_callback(self, callback):
         """Set a callback function to be called before tool execution"""
@@ -169,11 +97,10 @@ class CodeAgent:
 
             # Store the task message
             self.conversation_state.store_task_data("task", message)
-            print(f"Starting new task: {message[:50]}...")
-
+            
             # Print debug info if debug mode is on
             if self.debug:
-                print("\nDEBUG - Starting new conversation turn")
+                print(f"\nDEBUG - Starting new conversation turn (Agent: {self.agent_type.value})")
                 print(f"User message: {message}")
                 print(f"Available tools: {len(self.tools)}")
 
@@ -181,13 +108,26 @@ class CodeAgent:
             continue_conversation = True
             final_response = "No response generated"
 
-            # Get the system prompt
-            system_prompt = get_agent_prompt()
-
             while continue_conversation:
+                # Ensure agent_type is synced with conversation_state before each action
+                if self.agent_type != self.conversation_state.current_agent:
+                    # Agent type has changed - update tools and state
+                    self.agent_type = self.conversation_state.current_agent
+                    
+                    if self.debug:
+                        print(f"\nDEBUG - Switched to {self.agent_type.value} agent, updated tools and recreated agent")
+                
                 # Invoke the agent to get actions
                 if self.debug:
-                    print("\nDEBUG - Invoking agent for next actions")
+                    print(f"\nDEBUG - Invoking agent for next actions (Agent: {self.agent_type.value})")
+            
+                # Get the appropriate system prompt based on agent type
+                if self.agent_type == AgentTypeEnum.MASTER:
+                    system_prompt = get_master_agent_prompt()
+                elif self.agent_type == AgentTypeEnum.CODER:
+                    system_prompt = get_coder_prompt()
+                elif self.agent_type == AgentTypeEnum.DEEP_THINKER:
+                    system_prompt = get_deep_thinker_prompt()
 
                 # Format conversation history
                 conversation_history = "\n\n=== CONVERSATION HISTORY ===\n"
@@ -195,16 +135,24 @@ class CodeAgent:
                     role = msg["role"]
                     content = msg["content"]
                     conversation_history += f"{role.upper()}: {content}\n"
-
-                # Add assistant responses from action history to conversation history
-                assistant_responses = []
-                for action in self.conversation_state.action_history:
-                    if action["action"] == "respond" and "original_parameters" in action:
-                        if "message" in action["original_parameters"]:
-                            assistant_message = action["original_parameters"]["message"]
-                            if assistant_message not in assistant_responses:
-                                conversation_history += f"ASSISTANT: {assistant_message}\n"
-                                assistant_responses.append(assistant_message)
+                
+                # For the master agent, include results from sub-agents in the conversation context
+                subagent_results = ""
+                if self.agent_type == AgentTypeEnum.MASTER:
+                    subagent_results = "\n\n=== SUB-AGENT RESULTS ===\n"
+                    for agent_type in [AgentTypeEnum.CODER, AgentTypeEnum.DEEP_THINKER]:
+                        result = self.conversation_state.get_task_data(f"{agent_type.value}_result")
+                        if result:
+                            subagent_results += f"--- {agent_type.value.upper()} RESULT ---\n{result}\n\n"
+                    if subagent_results == "\n\n=== SUB-AGENT RESULTS ===\n":
+                        subagent_results = ""
+                
+                # For sub-agents, include their specific prompt
+                subagent_prompt = ""
+                if self.agent_type != AgentTypeEnum.MASTER:
+                    prompt = self.conversation_state.get_task_data("subagent_prompt")
+                    if prompt:
+                        subagent_prompt = f"\n\n=== TASK PROMPT ===\n{prompt}\n"
 
                 # Build file system context
                 file_system_context = "\n\n=== FILE SYSTEM CONTEXT ===\n"
@@ -212,10 +160,14 @@ class CodeAgent:
                 file_system_tree = self.project_context.build_full_directory_tree(self.conversation_state)
                 file_system_context += self.project_context.format_directory_tree_as_string(file_system_tree)
 
-                # Build code context
+                # Build code context - for master agent, only show files list, not content
                 code_context = "\n\n=== CODE CONTEXT ===\n"
-                code_context += get_code_prompt()
-                code_context += self.conversation_state.get_code_context_string()
+                if self.agent_type == AgentTypeEnum.MASTER:
+                    code_context += "Files that have been accessed:\n"
+                    code_context += "\n".join([f"- {file_path}" for file_path in self.conversation_state.code_context.keys()])
+                else:
+                    code_context += get_code_prompt()
+                    code_context += self.conversation_state.get_code_context_string()
 
                 # Format action history without showing results
                 action_history = "\n\n=== ACTION HISTORY ===\n"
@@ -224,7 +176,18 @@ class CodeAgent:
                     action_list = []
                     for i, action in enumerate(self.conversation_state.action_history):
                         action_name = action.get('action', 'unknown')
-                        status = "SUCCESS" if "error" not in action else "FAILED"
+                        
+                        # Determine status based on action type and results
+                        if action_name == "list_files" and 'result' in action:
+                            # For list_files, check if there was an error or if directory doesn't exist
+                            result_text = action['result']
+                            if "Error:" in result_text or "does not exist" in result_text:
+                                status = "FAILED"
+                            else:
+                                # Success if we got a valid directory listing (even if empty)
+                                status = "SUCCESS"
+                        else:
+                            status = "SUCCESS" if "error" not in action else "FAILED"
 
                         # Create a simple action summary without results
                         if action_name == "read_file":
@@ -233,16 +196,19 @@ class CodeAgent:
                         elif action_name == "write_file":
                             file_path = action.get('file_path', action.get('parameters', {}).get('file_path_content', 'unknown').split('|', 1)[0].strip() if '|' in action.get('parameters', {}).get('file_path_content', '') else action.get('parameters', {}).get('file_path_content', 'unknown'))
                             action_list.append(f"Action {i+1}: Wrote file '{file_path}' - {status}")
+                        elif action_name == "update_file":
+                            file_path = action.get('parameters', {}).get('file_path', 'unknown')
+                            action_list.append(f"Action {i+1}: Updated file '{file_path}' - {status}")
                         elif action_name == "list_files":
                             dir_path = action.get('parameters', {}).get('directory', '.')
                             action_list.append(f"Action {i+1}: Listed files in '{dir_path}' - {status}")
-                        elif action_name == "search_code":
-                            query = action.get('parameters', {}).get('query', 'unknown')
-                            action_list.append(f"Action {i+1}: Searched for '{query}' - {status}")
-                        elif action_name == "respond":
-                            action_list.append(f"Action {i+1}: Responded to user - {status}")
-                        elif action_name == "request_feedback":
+                        elif action_name == "final_answer":
                             action_list.append(f"Action {i+1}: Ended turn - {status}")
+                        elif action_name == "invoke_agent":
+                            agent_type = action.get('parameters', {}).get('agent_type', 'unknown')
+                            action_list.append(f"Action {i+1}: Invoked {agent_type} agent - {status}")
+                        elif action_name == "respond_to_master":
+                            action_list.append(f"Action {i+1}: Responded to master agent - {status}")
                         else:
                             params = action.get('parameters', {})
                             param_str = ", ".join(f"{k}={v}" for k, v in params.items())
@@ -260,19 +226,29 @@ class CodeAgent:
                 else:
                     latest_action_result += "No previous action results.\n"
 
-                # Task-specific context
-                last_message = f"\n\n=== LAST MESSAGE FROM USER ===\n{message}\n"
-
                 # Add to the comprehensive prompt
-                comprehensive_prompt = (
-                    f"{system_prompt}\n\n"
-                    f"{file_system_context}\n\n"
-                    f"{code_context}\n\n"
-                    f"{action_history}\n"
-                    f"{latest_action_result}\n"
-                    f"{conversation_history}"
-                    # f"{last_message}\n"
-                )
+                if self.agent_type == AgentTypeEnum.MASTER:
+                    comprehensive_prompt = (
+                        f"{system_prompt}\n\n"
+                        f"{file_system_context}\n\n"
+                        f"{code_context}\n\n"
+                        f"{action_history}\n"
+                        f"{latest_action_result}\n"
+                        f"{conversation_history}"
+                    )
+                else:
+                    comprehensive_prompt = (
+                        f"{system_prompt}\n\n"
+                        f"{file_system_context}\n\n"
+                        f"{code_context}\n\n"
+                        f"{subagent_prompt}\n"
+                        f"{action_history}\n"
+                        f"{latest_action_result}\n"
+                    )
+                    
+                # Add sub-agent specific components
+                if subagent_results:
+                    comprehensive_prompt += f"\n{subagent_results}"
 
                 # Save the comprehensive message for debugging
                 with open("last_message.txt", "w") as f:
@@ -282,11 +258,9 @@ class CodeAgent:
                     print(f"\nDEBUG - Input to model:\n{comprehensive_prompt[:500]}...[truncated]")
 
                 # Run agent with the comprehensive context
-                response = self.agent_executor.invoke({
-                    "input": comprehensive_prompt
-                })
+                response = self.llm.invoke(comprehensive_prompt)
 
-                agent_output = response["output"]
+                agent_output = response.content
 
                 if self.debug:
                     print(f"\nDEBUG - RAW MODEL OUTPUT:\n{agent_output}")
@@ -298,7 +272,7 @@ class CodeAgent:
                     print(f"\nDEBUG - PARSED ACTIONS ({len(actions)}):")
                     print(self.json_parser.format_for_agent(actions))
 
-                # Check if this is a final response (only respond action or request_feedback)
+                # Check if this is a final response (only respond action or final_answer)
                 is_final = self.conversation_state.is_final_response(actions)
 
                 if is_final:
@@ -309,10 +283,10 @@ class CodeAgent:
                     action_results = self.action_executor.execute_actions(actions, self.conversation_state)
                     self.conversation_state.add_action_results(action_results)
 
-                    # Get the final message to return (from respond or request_feedback action)
+                    # Get the final message to return (from respond or final_answer action)
                     final_message = None
                     for action in actions:
-                        if action["action"] in ["respond", "request_feedback"]:
+                        if action["action"] in ["final_answer"]:
                             final_message = action["parameters"].get("message", "Task completed.")
                             break
 
@@ -345,7 +319,7 @@ class CodeAgent:
                 if not continue_conversation and not is_final:
                     # Find the last respond action
                     for result in reversed(action_results):
-                        if result["action"] == "respond" and "message" in result:
+                        if result["action"] == "final_answer" and "message" in result:
                             final_response = result["message"]
                             break
 
@@ -372,7 +346,17 @@ class CodeAgent:
 
         formatted = []
         action_name = result.get('action', 'unknown')
-        status = "SUCCESS" if "error" not in result else "FAILED"
+        # Determine status based on action type and results
+        if action_name == "list_files" and 'result' in result:
+            # For list_files, check if there was an error or if directory doesn't exist
+            result_text = result['result']
+            if "Error:" in result_text or "does not exist" in result_text:
+                status = "FAILED"
+            else:
+                # Success if we got a valid directory listing (even if empty)
+                status = "SUCCESS"
+        else:
+            status = "SUCCESS" if "error" not in result else "FAILED"
 
         # Format based on action type for better clarity
         if action_name == "list_files":
@@ -384,6 +368,11 @@ class CodeAgent:
                 formatted.append(f"  Found {files_count} files and {dirs_count} directories")
                 # Include a brief summary, the full structure will be in FILE SYSTEM CONTEXT
                 formatted.append(f"  Check the FILE SYSTEM CONTEXT section for the complete directory structure.")
+            elif status == "FAILED":
+                if 'result' in result and ("Error:" in result['result'] or "does not exist" in result['result']):
+                    formatted.append(f"  Error: {result['result']}")
+                else:
+                    formatted.append(f"  Error: {result.get('result', 'Unknown error')}")
         elif action_name == "read_file":
             file_path = result.get('parameters', {}).get('file_path', 'unknown')
             formatted.append(f"✓ Latest action: Read file '{file_path}' - {status}")
@@ -400,11 +389,6 @@ class CodeAgent:
             elif status == "SUCCESS":
                 # Don't include content here - it will be in CODE CONTEXT
                 formatted.append(f"  Check the CODE CONTEXT section for the content of this file.")
-        elif action_name == "search_code":
-            formatted.append(f"✓ Latest action: Searched for '{result.get('parameters', {}).get('query', 'unknown')}' - {status}")
-            if status == "SUCCESS" and 'result' in result:
-                # Include the search results for the model to use
-                formatted.append("\nSEARCH RESULTS:\n" + result['result'])
         else:
             # Generic format for other actions
             formatted.append(f"✓ Latest action: Executed {action_name} - {status}")

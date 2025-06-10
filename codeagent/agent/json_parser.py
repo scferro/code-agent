@@ -108,46 +108,9 @@ class JsonResponseParser:
         # First try 'parameters' field (our JSON schema)
         params = action_data.get('parameters', {})
         
-        # If parameters is empty, check for 'action_input' (LangChain format)
+        # If parameters is empty, check for 'action_input'
         if not params and 'action_input' in action_data:
-            action_input = action_data['action_input']
-            
-            # For write_file, handle the pipe-separated format
-            if action == 'write_file' and isinstance(action_input, str):
-                params = {'file_path_content': action_input}
-            # For list_files, handle the directory parameter
-            elif action == 'list_files' and isinstance(action_input, str):
-                # Check if it's a simple directory string or contains additional parameters
-                if action_input.startswith("{") and action_input.endswith("}"):
-                    try:
-                        # Try to parse as JSON
-                        list_files_params = json.loads(action_input)
-                        params = list_files_params
-                    except:
-                        # Fallback to assuming it's just a directory path
-                        params = {'directory': action_input}
-                else:
-                    params = {'directory': action_input}
-            # For read_file, handle the file_path parameter
-            elif action == 'read_file' and isinstance(action_input, str):
-                params = {'file_path': action_input}
-            # For search_code, handle the query parameter
-            elif action == 'search_code' and isinstance(action_input, str):
-                params = {'query': action_input}
-            # For respond, handle the message parameter
-            elif action == 'respond' and isinstance(action_input, str):
-                params = {'message': action_input}
-            # For phase transition actions with plans
-            elif action == 'complete_planning' and isinstance(action_input, dict):
-                # The action_input itself is the entire plan structure, don't nest it
-                params = action_input
-            elif action == 'complete_execution':
-                params = action_input if isinstance(action_input, dict) else {'status': str(action_input)}
-            elif action == 'complete_verification':
-                params = action_input if isinstance(action_input, dict) else {'successful': False, 'summary': str(action_input)}
-            # Generic fallback for other tools
-            else:
-                params = {'input': action_input}
+            params = action_data.get('action_input', {})
         
         return {
             "action": action,

@@ -7,7 +7,6 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 from codeagent.agent.code_agent import CodeAgent
-from codeagent.utils.config import get_config
 
 console = Console()
 
@@ -105,59 +104,8 @@ Your specific environment settings.
     ))
 
 @cli_app.command()
-@click.argument("task_description")
 @click.option("--project-dir", "-p", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--model", "-m", help="Ollama model to use", default="codellama:7b-instruct")
-@click.option("--verbose/--quiet", "-v/-q", default=False, help="Show detailed processing logs")
-@click.option("--debug", is_flag=True, default=False, help="Enable debug output")
-def task(task_description, project_dir, model, verbose, debug):
-    """Execute a coding task"""
-    project_path = Path(project_dir).absolute()
-    console.print(f"Working in [bold]{project_path}[/bold]")
-    console.print(f"Task: [italic]{task_description}[/italic]")
-
-    # Initialize agent
-    console.print("[bold yellow]Initializing agent...[/bold yellow]")
-    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug)
-
-    # Define a callback for tool execution that handles pausing the status
-    def tool_callback(tool_name, tool_input):
-        # If we're about to execute a tool that might require permission,
-        # ensure the status is not active
-        if tool_name in ['write_file', 'execute_command', 'run_python_script']:
-            if hasattr(console, 'status') and console.status:
-                console.status.stop()
-
-    # Attach the callback to the agent
-    agent.set_tool_callback(tool_callback)
-
-    # Use a try/finally to ensure status is properly handled and cleanup occurs
-    try:
-        # Process task
-        console.print("[bold yellow]Thinking...[/bold yellow]")
-
-        with console.status("[bold yellow]Processing task...[/bold yellow]") as status:
-            result = agent.process_task(task_description)
-            status.stop()
-
-        # Display result
-        console.print("\n[bold green]Solution:[/bold green]")
-        console.print(Markdown(result))
-    except KeyboardInterrupt:
-        console.print("[bold red]Operation interrupted by user[/bold red]")
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {str(e)}")
-        if verbose:
-            import traceback
-            console.print(traceback.format_exc())
-    finally:
-        # Ensure cleanup happens when task completes
-        console.print("[bold yellow]Cleaning up resources...[/bold yellow]")
-        agent.cleanup()
-
-@cli_app.command()
-@click.option("--project-dir", "-p", type=click.Path(exists=True, file_okay=False), default=".")
-@click.option("--model", "-m", help="Ollama model to use", default="gemma3:27b-it-qat")
+@click.option("--model", "-m", help="Ollama model to use", default="devstral")
 @click.option("--verbose/--quiet", "-v/-q", default=False, help="Show detailed processing logs")
 @click.option("--debug", is_flag=True, default=False, help="Enable debug output")
 def chat(project_dir, model, verbose, debug):
@@ -165,9 +113,10 @@ def chat(project_dir, model, verbose, debug):
     project_path = Path(project_dir).absolute()
     console.print(f"Starting chat session in [bold]{project_path}[/bold]")
 
-    # Initialize agent
+    # Initialize agent as MASTER agent by default
     console.print("[bold yellow]Initializing agent...[/bold yellow]")
-    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug)
+    from codeagent.agent.conversation_state import AgentType
+    agent = CodeAgent(project_dir, model_name=model, verbose=verbose, debug=debug, agent_type=AgentType.MASTER)
 
     try:
         # Start chat loop

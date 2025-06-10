@@ -268,48 +268,32 @@ class ProjectContext:
         return root_tree
 
     def format_directory_tree_as_string(self, tree: Dict[str, Any], prefix: str = "") -> str:
-        """Format a directory tree as a string.
+        """Format a directory tree as a simple list of file paths.
 
         Args:
             tree: The directory tree structure
             prefix: Current indentation prefix (used for recursion)
 
         Returns:
-            A formatted string representation of the tree
+            A formatted string with just the full file paths
         """
         if not tree or not isinstance(tree, dict):
             return "Invalid tree structure"
 
         result = []
 
-        # Add current node
+        # Only process files, not directories
         node_type = tree.get("type", "unknown")
-        name = tree.get("name", "unnamed")
         path = tree.get("path", "")
 
-        if node_type == "directory":
-            # Show directory with trailing slash
-            result.append(f"{prefix}📁 {name}/")
-
-            # If there's an error, add it
-            if "error" in tree:
-                result.append(f"{prefix}    ⚠️ {tree['error']}")
-
-            # If there's a note, add it
-            if "note" in tree:
-                result.append(f"{prefix}    📝 {tree['note']}")
-
-            # If not explored, indicate it
-            if "explored" in tree and not tree["explored"]:
-                result.append(f"{prefix}    (not explored)")
-
-            # Add children with increased indentation
+        if node_type == "file":
+            # Just add the full file path
+            result.append(path)
+        elif node_type == "directory":
+            # Process children recursively
             for child in tree.get("children", []):
-                child_result = self.format_directory_tree_as_string(child, prefix + "    ")
-                result.append(child_result)
-        else:
-            # Show file with size if available
-            size = f" ({tree.get('size', '')})" if "size" in tree else ""
-            result.append(f"{prefix}📄 {name}{size}")
+                child_result = self.format_directory_tree_as_string(child, prefix)
+                if child_result:
+                    result.append(child_result)
 
         return "\n".join(result)

@@ -1,8 +1,10 @@
 """Action Executor for sequential processing of model actions."""
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 
 from rich.console import Console
+from codeagent.agent.conversation_state import AgentType
+from codeagent.tools.agent_tools import AgentType as ToolAgentType
 
 console = Console()
 
@@ -49,34 +51,96 @@ class ActionExecutor:
             if self.debug:
                 console.print(f"[dim]Executing action: {action_name} with parameters: {parameters}[/dim]")
 
-            # Special case for respond action
-            if action_name == "respond":
-                message = parameters.get("message", "No response message provided.")
-                console.print(f"[bold green]Agent:[/bold green] {message}")
-
-                # Store the original parameters for response tracking
-                results.append({
-                    "action": "respond",
-                    "result": "Message displayed to user",
-                    "original_parameters": parameters,  # Store the original message
-                    "message": message  # Explicitly store the message for easier access
-                })
-                continue
-                
-            # Special case for request_feedback action
-            if action_name == "request_feedback" and conversation_state:
+            # Special case for final_answer action
+            if action_name == "final_answer" and conversation_state:
                 message = parameters.get("message", "Task completed.")
-                console.print(f"[bold green]Agent:[/bold green] {message}")
+                console.print(f"[bold green]\nAgent:[/bold green] {message}")
                 
                 # Mark the task as complete in the conversation state
                 conversation_state.mark_task_complete()
                 
                 # Return result for this action
                 results.append({
-                    "action": "request_feedback",
+                    "action": "final_answer",
                     "result": "Turn ended successfully",
                     "original_parameters": parameters,
                     "message": message
+                })
+                continue
+            
+            # Special case for invoke_agent action
+            if action_name == "invoke_agent" and conversation_state:
+                agent_type_str = parameters.get("agent_type", "").lower()
+                prompt = parameters.get("prompt", "No prompt provided.")
+                
+                # Convert string to enum
+                try:
+                    agent_type = AgentType(agent_type_str)
+                except ValueError:
+                    error_msg = f"Invalid agent type: {agent_type_str}"
+                    console.print(f"[bold red]Error:[/bold red] {error_msg}")
+                    results.append({
+                        "action": "invoke_agent",
+                        "result": f"Error: {error_msg}",
+                        "error": True
+                    })
+                    continue
+                
+                if agent_type == AgentType.DEEP_THINKER:
+                    console.print(f"[bold blue]Exploring the codebase...[/bold blue]")
+                elif agent_type == AgentType.CODER: 
+                    console.print(f"[bold blue]Generating code...[/bold blue]")
+                else:
+                    console.print(f"[bold blue]Switching to {agent_type.value} agent[/bold blue]")
+                
+                # Store the current state before switching
+                conversation_state.store_agent_state()
+                
+                # Switch to the new agent
+                conversation_state.switch_agent(agent_type)
+                
+                # Tell the CodeAgent instance to update its tools based on new agent type
+                # This will happen when it checks self.agent_type = self.conversation_state.current_agent
+                
+                # Store the prompt for the subagent
+                conversation_state.store_task_data("subagent_prompt", prompt)
+                
+                # Return result for this action
+                results.append({
+                    "action": "invoke_agent",
+                    "result": f"Switched to {agent_type.value} agent",
+                    "parameters": parameters
+                })
+                continue
+            
+            # Special case for respond_to_master action
+            if action_name == "respond_to_master" and conversation_state:
+                # There was a bug where the parameter names weren't consistent
+                # This fixes it by checking both possible parameter names
+                response = parameters.get("response", "No response provided.")
+                
+                # Store the current sub-agent's result
+                current_agent = conversation_state.current_agent
+                conversation_state.store_task_data(f"{current_agent.value}_result", response)
+                
+                if current_agent.value=="deep_thinker":
+                    console.print("[bold blue]Summarizing thoughts...[/bold blue]")
+                elif current_agent.value=="coder":
+                    console.print("[bold blue]Reviewing and finalizing new code...[/bold blue]")
+                else:
+                    console.print(f"[bold blue]{current_agent.value} agent responding to master[/bold blue]")
+                
+                # Store the current state before switching back
+                conversation_state.store_agent_state()
+                
+                # Switch back to the master agent
+                conversation_state.switch_agent(AgentType.MASTER)
+                
+                # Return result for this action
+                results.append({
+                    "action": "respond_to_master",
+                    "result": f"Returned to master agent with response from {current_agent.value} agent",
+                    "parameters": parameters
                 })
                 continue
 
@@ -287,6 +351,9 @@ class ActionExecutor:
         elif action_name == "write_file" and "file_path_content" in parameters:
             file_path = parameters["file_path_content"].split('|', 1)[0].strip()
             return f"Writing to {file_path}"
+            
+        elif action_name == "update_file" and "file_path" in parameters:
+            return f"Updating {parameters['file_path']}"
 
         elif action_name == "list_files" and "directory" in parameters:
             dir_name = parameters["directory"] or "."
@@ -295,8 +362,14 @@ class ActionExecutor:
         elif action_name == "search_code" and "query" in parameters:
             return f"Searching for '{parameters['query']}'"
             
-        elif action_name == "request_feedback":
+        elif action_name == "final_answer":
             return "Ending agent turn"
+            
+        elif action_name == "invoke_agent" and "agent_type" in parameters:
+            return f"Invoking {parameters['agent_type']} agent"
+            
+        elif action_name == "respond_to_master":
+            return "Responding to master agent"
 
         else:
             # Generic summary

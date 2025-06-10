@@ -1,6 +1,14 @@
 """Conversation state management for multi-round interactions."""
 from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass, field
+from enum import Enum
+from copy import deepcopy
+
+class AgentType(Enum):
+    """Enum for different agent types."""
+    MASTER = "master"
+    CODER = "coder"
+    DEEP_THINKER = "deep_thinker"
 
 
 @dataclass
@@ -42,6 +50,16 @@ class ConversationState:
 
     # Code context - maps file paths to content
     code_context: Dict[str, str] = field(default_factory=dict)
+    
+    # Current active agent
+    current_agent: AgentType = AgentType.MASTER
+    
+    # Dictionary mapping agent types to their respective state information
+    agent_states: Dict[AgentType, Dict[str, Any]] = field(default_factory=lambda: {
+        AgentType.MASTER: {"messages": [], "actions": []},
+        AgentType.CODER: {"messages": [], "actions": []},
+        AgentType.DEEP_THINKER: {"messages": [], "actions": []}
+    })
     
     def add_user_message(self, message: str) -> None:
         """Add a user message to the history.
@@ -89,15 +107,15 @@ class ConversationState:
             actions: List of action dictionaries
 
         Returns:
-            True if this is a terminal response ONLY if request_feedback is present
+            True if this is a terminal response ONLY if final_answer is present
         """
         # Check if the task has been marked as complete
         if self.task_complete:
             return True
 
-        # ONLY check for request_feedback action - this is the only way to end a turn
+        # ONLY check for final_answer action - this is the only way to end a turn
         for action in actions:
-            if action.get("action") == "request_feedback":
+            if action.get("action") == "final_answer":
                 return True
 
         # All other responses should continue the conversation
@@ -217,3 +235,53 @@ class ConversationState:
         self.task_metadata = {}
         self.task_complete = False
         # Don't reset file_system_context and code_context to maintain context across tasks
+        
+    def store_agent_state(self) -> None:
+        """Store the current agent's state."""
+        # Store current messages and actions to the agent's state
+        self.agent_states[self.current_agent] = {
+            "messages": deepcopy(self.message_history),
+            "actions": deepcopy(self.action_history),
+            "latest_result": deepcopy(self.latest_action_result),
+            "current_results": deepcopy(self.current_action_results),
+            "state": self.state
+        }
+    
+    def switch_agent(self, agent_type: AgentType) -> None:
+        """Switch to a different agent and restore its state.
+        
+        Args:
+            agent_type: The agent type to switch to
+        """
+        # Store current agent state before switching
+        self.store_agent_state()
+        
+        # Update current agent
+        self.current_agent = agent_type
+        
+        # Restore state from the agent's saved state
+        agent_state = self.agent_states.get(agent_type, {})
+        
+        # For sub-agents, we maintain file_system_context and code_context,
+        # but we reset their message and action history
+        if agent_type != AgentType.MASTER:
+            self.message_history = deepcopy(agent_state.get("messages", []))
+            self.action_history = deepcopy(agent_state.get("actions", []))
+            self.latest_action_result = deepcopy(agent_state.get("latest_result"))
+            self.current_action_results = deepcopy(agent_state.get("current_results", []))
+            self.state = agent_state.get("state", "awaiting_user_input")
+        else:
+            # For master agent, restore full state
+            self.message_history = deepcopy(agent_state.get("messages", self.message_history))
+            self.action_history = deepcopy(agent_state.get("actions", self.action_history))
+            self.latest_action_result = deepcopy(agent_state.get("latest_result", self.latest_action_result))
+            self.current_action_results = deepcopy(agent_state.get("current_results", self.current_action_results))
+            self.state = agent_state.get("state", self.state)
+    
+    def get_current_agent_type(self) -> str:
+        """Get the current agent type as a string.
+        
+        Returns:
+            The current agent type string
+        """
+        return self.current_agent.value

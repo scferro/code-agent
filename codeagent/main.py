@@ -8,20 +8,12 @@ from pathlib import Path
 from rich.console import Console
 
 from codeagent.cli import cli_app
-from codeagent.utils.config import load_config
-from codeagent.utils.logger import setup_logger
 
 console = Console()
 
 def main():
     """Main entry point for the application"""
-    try:
-        # Setup logging
-        setup_logger()
-        
-        # Load configuration
-        load_config()
-        
+    try:        
         # Run CLI
         cli_app()
         

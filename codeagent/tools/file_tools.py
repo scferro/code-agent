@@ -1,7 +1,5 @@
 """File operation tools"""
-from langchain.tools import BaseTool, StructuredTool, Tool, tool
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+from langchain.tools import tool
 
 from codeagent.tools.permissions import PermissionManager
 
@@ -60,6 +58,9 @@ def get_file_tools(project_context):
                             indent = "  " * current_depth
                             directories.append(f"{indent}📁 {rel_path}/")
 
+                            # Mark this directory as explored in the project context
+                            project_context.explored_dirs.add(str(rel_path))
+
                             # Recursively process subdirectory if recursive flag is set
                             if recursive:
                                 collect_items(item, current_depth + 1)
@@ -91,8 +92,8 @@ def get_file_tools(project_context):
             result.append(f"\nFiles ({len(files)}):")
             result.extend(files)
 
-            # Track that this directory has been explored
-            project_context.track_dir_exploration(directory)
+            # We don't call track_dir_exploration directly here anymore
+            # It's now handled by action_executor.py which passes the conversation_state correctly
 
             return "\n".join(result)
         except Exception as e:
@@ -128,43 +129,14 @@ def get_file_tools(project_context):
                 
             file_info += f" ({size_str})"
             
-            # Track that this file has been explored
-            project_context.track_file_exploration(file_path)
+            # We don't call track_file_exploration directly here anymore
+            # It's now handled by action_executor.py which passes the conversation_state correctly
             
             # Return formatted content
             separator = "=" * len(file_info)
             return f"{file_info}\n{separator}\n\n{content}"
         except Exception as e:
             return f"Error reading file: {e}"
-
-    @tool
-    def search_code(query):
-        """Search the codebase for relevant code using semantic search."""
-        try:
-            # Use semantic search
-            results = project_context.search_code(query)
-            
-            if not results:
-                return f"No results found for query: {query}"
-                
-            # Format results
-            output = [f"Search results for: '{query}'"]
-            
-            for i, result in enumerate(results, 1):
-                file_path = result["file_path"]
-                score = result["score"] if "score" in result else "Unknown"
-                content = result["content"]
-                
-                # Track that this file has been explored
-                if file_path != "Unknown":
-                    project_context.track_file_exploration(file_path)
-                
-                output.append(f"\n--- Result {i}: {file_path} (Score: {score:.2f}) ---\n")
-                output.append(content)
-            
-            return "\n".join(output)
-        except Exception as e:
-            return f"Error searching code: {e}"
 
     # Use the standard @tool decorator for consistency
     @tool
@@ -212,19 +184,63 @@ def get_file_tools(project_context):
             return f"Error writing file: {str(e)}."
 
     @tool
-    def respond(message):
-        """Send a text response directly to the user."""
-        # This tool simply returns the message, which will be displayed to the user
-        return message
-
-    @tool
-    def request_feedback(message):
+    def final_answer(message):
         """Signal that the task is complete and end your turn."""
         # This tool marks the task as complete and returns a final message
         return message
 
+    @tool
+    def update_file(file_path, old_text, new_text):
+        """Update a file by replacing specified text with new text.
+        
+        Args:
+            file_path: The path to the file to update
+            old_text: The text to replace
+            new_text: The new text to insert
+        """
+        try:
+            full_path = project_context.project_dir / file_path
+            
+            # Check if file exists
+            if not full_path.exists():
+                return f"Error: File '{file_path}' does not exist"
+                
+            if not full_path.is_file():
+                return f"Error: '{file_path}' is not a file"
+            
+            # Check permission
+            if not perm_manager.check_permission("write", file_path):
+                perm_granted = perm_manager.request_permission(
+                    "write",
+                    f"Update file: {file_path}",
+                    "This will modify your filesystem."
+                )
+
+                if not perm_granted:
+                    return "Permission denied: Cannot update file"
+            
+            # Read the current content
+            content = full_path.read_text(errors='ignore')
+            
+            # Check if the old_text exists in the file
+            if old_text not in content:
+                return f"Error: The text to replace was not found in {file_path}."
+            
+            # Replace the text
+            new_content = content.replace(old_text, new_text)
+            
+            # Write the updated content
+            full_path.write_text(new_content)
+            
+            # Track that this file has been explored and modified
+            project_context.track_file_exploration(file_path)
+            
+            return f"Successfully updated {file_path}"
+        except Exception as e:
+            return f"Error updating file: {str(e)}."
+
     # Create the tools list
-    tools = [list_files, read_file, search_code, write_file, respond, request_feedback]
+    tools = [list_files, read_file, write_file, update_file, final_answer]
 
     # Return all tools - use the standard @tool decorated function
     return tools
