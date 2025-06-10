@@ -1,21 +1,23 @@
 # Code Agent
 
-A Python-based intelligent coding assistant powered by LLMs through Ollama. Code Agent can understand your codebase, answer questions, and help you implement new features.
+A Python-based intelligent coding assistant powered by LLMs through Ollama. Code Agent can understand your codebase, answer questions, and help you implement new features using a sophisticated agent system.
 
 ## Features
 
 - Interactive chat interface with LLM-powered coding assistance
+- Dual-agent architecture (main + sub-agent) for complex task decomposition
 - Codebase exploration and understanding
-- Semantic code search
-- File creation and modification
-- Multi-phase approach for complex tasks (exploration, planning, execution, verification)
+- File creation, reading, and modification
+- Project context management with .agent.md configuration
+- Permission-based file operations for security
 - Local execution with Ollama (no cloud API required)
+- Conversation state management across multiple turns
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.8+
 - [Ollama](https://ollama.ai/) installed and running
 
 ### Setup
@@ -41,7 +43,7 @@ A Python-based intelligent coding assistant powered by LLMs through Ollama. Code
 
 ### Model Configuration
 
-By default, Code Agent uses `gemma3:12b` from Ollama. You can specify a different Ollama model using the `--model` flag:
+By default, Code Agent uses `devstral` from Ollama. You can specify a different Ollama model using the `--model` flag:
 
 ```bash
 codeagent chat --model "codellama:7b"
@@ -67,13 +69,27 @@ Start an interactive chat session in your project directory:
 codeagent chat
 ```
 
-### Execute a Specific Task
-
-Run a one-off task:
+You can customize the chat session with these options:
 
 ```bash
-codeagent task "Create a basic logging setup using the standard library"
+# Use a specific model
+codeagent chat --model "codellama:7b"
+
+# Use a different project directory
+codeagent chat --project-dir /path/to/project
+
+# Enable verbose output
+codeagent chat --verbose
+
+# Enable debug mode for detailed logging
+codeagent chat --debug
 ```
+
+### Available Commands
+
+- `codeagent init [PROJECT_DIR]` - Initialize a project with .agent.md configuration
+- `codeagent chat [OPTIONS]` - Start an interactive chat session
+- `codeagent config [OPTIONS]` - View or edit agent configuration
 
 ### Examples
 
@@ -85,11 +101,19 @@ codeagent task "Create a basic logging setup using the standard library"
 [Agent]: The project contains several Python modules organized as follows:
 
 - `codeagent/`: Main package directory
-  - `agent/`: Agent implementation (code_agent.py, prompts.py, workflows.py)
+  - `agent/`: Core agent implementation
+    - `code_agent.py`: Main agent class with dual-agent system
+    - `conversation_state.py`: Conversation state management
+    - `action_executor.py`: Action execution and tool coordination
+    - `json_parser.py`: JSON response parsing from LLM
+    - `project_context.py`: Project context and file tracking
+    - `prompts.py`: System prompts for different agent types
+  - `tools/`: Tool implementations
+    - `file_tools.py`: File operations (read, write, list, update)
+    - `agent_tools.py`: Agent coordination tools (invoke_agent, respond_to_master)
+    - `permissions.py`: Permission management for secure operations
   - `cli.py`: Command-line interface
-  - `context/`: Project context handling (embeddings.py, project_context.py)
-  - `tools/`: Tool implementations (code_tools.py, file_tools.py, execution_tools.py)
-  - `utils/`: Utility modules (config.py, logger.py, ollama.py)
+- `main.py`: Entry point for the application
 ```
 
 #### Example 2: Code Creation
@@ -149,6 +173,30 @@ if __name__ == "__main__":
                 print(f"  - {path}")
 ```
 
+## Agent Architecture
+
+Code Agent uses a sophisticated dual-agent system:
+
+### Main Agent
+- **Role**: Handles user interaction, task decomposition, and coordination
+- **Capabilities**: Can delegate complex tasks to sub-agents, integrate results, provide comprehensive responses
+- **Tools**: All file operations, agent coordination, user communication
+
+### Sub-Agent
+- **Role**: Focuses on specific, well-defined tasks
+- **Capabilities**: Clean conversation context, access to all project files, specialized task execution
+- **Tools**: File operations only (no recursion - cannot create more sub-agents)
+
+### How It Works
+1. User asks a question or requests a task
+2. Main agent analyzes the complexity
+3. For simple tasks: Main agent handles directly
+4. For complex tasks: Main agent delegates focused sub-tasks to sub-agents
+5. Sub-agents complete their tasks and return results
+6. Main agent integrates results and responds to user
+
+This architecture allows for better focus on complex multi-step problems while maintaining conversation context.
+
 ## Advanced Usage
 
 ### Using Project Context
@@ -165,6 +213,15 @@ Edit the generated `.agent.md` file to include:
 - Code style guidelines
 - Common commands
 - Key file descriptions
+
+### Permission System
+
+Code Agent includes a security-focused permission system:
+- **Session permissions**: Valid for current session only
+- **Project permissions**: Saved in `.codeagent/permissions.json` (7 days)
+- **Global permissions**: Saved in `~/.codeagent/permissions.json` (30 days)
+
+You'll be prompted to grant permissions for file operations and can choose the appropriate scope.
 
 ### Verbose and Debug Modes
 
