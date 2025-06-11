@@ -7,6 +7,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 from codeagent.agent.code_agent import CodeAgent
+from codeagent.tools.permissions import request_permission, set_status_context
 
 console = Console()
 
@@ -129,8 +130,12 @@ def chat(project_dir, model, verbose, debug):
                 break
 
             # Note: The action execution prints the responses directly
-            with console.status("[bold yellow]Processing...[/bold yellow]"):
+            with console.status("[bold yellow]Processing...[/bold yellow]") as status:
+                # Set the status context so permission requests can pause it
+                set_status_context(status)
                 agent.chat(user_input)
+                # Clear the status context when done
+                set_status_context(None)
 
             # Line break for next user input
             console.print("")
@@ -166,8 +171,11 @@ def config(scope, project_dir):
     edit = click.confirm("Would you like to edit this file?", default=False)
     if edit:
         editor = os.environ.get("EDITOR", "nano")
-        os.system(f"{editor} {path}")
-        console.print(f"[bold green]✓[/bold green] {path} has been updated.")
+        if request_permission("execute", f"Run editor command: {editor} {path}", "This will execute a shell command to open your editor."):
+            os.system(f"{editor} {path}")
+            console.print(f"[bold green]✓[/bold green] {path} has been updated.")
+        else:
+            console.print("[bold red]Permission denied.[/bold red] File editing cancelled.")
 
 if __name__ == "__main__":
     cli_app()

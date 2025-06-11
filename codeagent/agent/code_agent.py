@@ -243,7 +243,8 @@ class CodeAgent:
                     comprehensive_prompt += f"\n{subagent_results}"
 
                 # Save the comprehensive message for debugging
-                with open("last_message.txt", "w") as f:
+                debug_file = Path(__file__).parent.parent / "last_message.txt"
+                with open(debug_file, "w") as f:
                     f.write(comprehensive_prompt)
 
                 if self.debug:

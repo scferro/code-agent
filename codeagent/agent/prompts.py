@@ -89,7 +89,7 @@ SUB-AGENT CAPABILITIES:
 
 RULES:
 1. Handle simple tasks directly - don't over-delegate
-2. Use sub-agents for complex, focused sub-tasks
+2. ONLY use sub-agents for complex, multi-step tasks
 3. Provide clear, specific instructions when delegating
 4. Always use final_answer to end your turn
 5. Maintain context and integrate sub-agent results

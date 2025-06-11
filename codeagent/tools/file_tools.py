@@ -1,11 +1,9 @@
 """File operation tools"""
 from langchain.tools import tool
-
-from codeagent.tools.permissions import PermissionManager
+from codeagent.tools.permissions import request_permission
 
 def get_file_tools(project_context):
     """Get file operation tools"""
-    perm_manager = PermissionManager()
     
     @tool
     def list_files(directory=".", recursive=True, max_depth=3):
@@ -159,19 +157,17 @@ def get_file_tools(project_context):
                 file_path = file_path_content.strip()
                 content = ""
 
-            # Check permission
-            if not perm_manager.check_permission("write", file_path):
-                perm_granted = perm_manager.request_permission(
-                    "write",
-                    f"Write to file: {file_path}",
-                    "This will modify your filesystem."
-                )
-
-                if not perm_granted:
-                    return "Permission denied: Cannot write to file"
-
-            # Write file
+            # Check if this is creating a new file or overwriting existing
             full_path = project_context.project_dir / file_path
+            is_new_file = not full_path.exists()
+            
+            # Create a preview of what will be written
+            content_preview = content[:500] + ("..." if len(content) > 500 else "")
+            
+            # Request permission before writing (always ask, even for new files)
+            operation = "create" if is_new_file else "overwrite"
+            if not request_permission(operation, f"{operation.title()} file: {file_path}", "This will modify your filesystem.", f"Content to write:\n{content_preview}"):
+                return f"Permission denied: Cannot {operation} file"
 
             # Create parent directories if they don't exist
             full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,6 +178,28 @@ def get_file_tools(project_context):
             return f"Successfully wrote to {file_path}"
         except Exception as e:
             return f"Error writing file: {str(e)}."
+
+    @tool
+    def run_command(command):
+        """Execute a shell command (requires permission)."""
+        import subprocess
+        
+        # Request permission before executing command
+        if not request_permission("execute", f"Run command: {command}", "This will execute a shell command on your system."):
+            return "Permission denied: Cannot execute command"
+        
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
+            output = f"Exit code: {result.returncode}\n"
+            if result.stdout:
+                output += f"STDOUT:\n{result.stdout}\n"
+            if result.stderr:
+                output += f"STDERR:\n{result.stderr}\n"
+            return output
+        except subprocess.TimeoutExpired:
+            return "Error: Command timed out after 30 seconds"
+        except Exception as e:
+            return f"Error executing command: {str(e)}"
 
     @tool
     def final_answer(message):
@@ -208,23 +226,19 @@ def get_file_tools(project_context):
             if not full_path.is_file():
                 return f"Error: '{file_path}' is not a file"
             
-            # Check permission
-            if not perm_manager.check_permission("write", file_path):
-                perm_granted = perm_manager.request_permission(
-                    "write",
-                    f"Update file: {file_path}",
-                    "This will modify your filesystem."
-                )
-
-                if not perm_granted:
-                    return "Permission denied: Cannot update file"
-            
             # Read the current content
             content = full_path.read_text(errors='ignore')
             
             # Check if the old_text exists in the file
             if old_text not in content:
                 return f"Error: The text to replace was not found in {file_path}."
+            
+            # Create a diff preview
+            diff_preview = f"BEFORE:\n{old_text}\n\nAFTER:\n{new_text}"
+            
+            # Request permission before updating
+            if not request_permission("edit", f"Update file: {file_path}", "This will modify your filesystem.", diff_preview):
+                return "Permission denied: Cannot update file"
             
             # Replace the text
             new_content = content.replace(old_text, new_text)
@@ -240,7 +254,7 @@ def get_file_tools(project_context):
             return f"Error updating file: {str(e)}."
 
     # Create the tools list
-    tools = [list_files, read_file, write_file, update_file, final_answer]
+    tools = [list_files, read_file, write_file, run_command, update_file, final_answer]
 
     # Return all tools - use the standard @tool decorated function
     return tools

@@ -159,31 +159,43 @@ class ActionExecutor:
                     "result": result,
                     "parameters": parameters  # Store parameters for all actions by default
                 }
-
-                # Add code context for file operations
-                if action_name == "write_file" and "file_path_content" in parameters:
-                    try:
-                        file_path_content = parameters["file_path_content"]
-                        if '|' in file_path_content:
-                            parts = file_path_content.split('|', 1)
-                            file_path = parts[0].strip()
-                            content = parts[1] if len(parts) > 1 else ""
-
-                            # Store the file path and content in the result
-                            result_entry["file_path"] = file_path
-                            result_entry["content"] = content
-
-                            # Update conversation state's code context if provided
-                            if conversation_state and hasattr(conversation_state, 'update_code_context'):
-                                conversation_state.update_code_context(file_path, content)
-
-                                # Also track the parent directory as explored
-                                parent_dir = str((self.project_context.project_dir / file_path).parent.relative_to(self.project_context.project_dir))
-                                if parent_dir:
-                                    self.project_context.track_dir_exploration(parent_dir, conversation_state, recursive=False)
-                    except Exception as e:
-                        if self.debug:
-                            console.print(f"[dim]Error handling write_file content: {str(e)}[/dim]")
+                
+                # Update code context for successful file write/edit operations
+                if conversation_state and "Successfully" in str(result):
+                    if action_name == "write_file" and "file_path_content" in parameters:
+                        try:
+                            file_path_content = parameters["file_path_content"]
+                            if '|' in file_path_content:
+                                parts = file_path_content.split('|', 1)
+                                file_path = parts[0].strip()
+                                
+                                # Read the actual content from the file to ensure it's current
+                                full_path = self.project_context.project_dir / file_path
+                                if full_path.exists():
+                                    actual_content = full_path.read_text(errors='ignore')
+                                    conversation_state.update_code_context(file_path, actual_content)
+                                    
+                                    # Also track that this file has been explored
+                                    self.project_context.track_file_exploration(file_path, conversation_state)
+                        except Exception as e:
+                            if self.debug:
+                                console.print(f"[dim]Error updating code context for write_file: {str(e)}[/dim]")
+                    
+                    elif action_name == "update_file" and "file_path" in parameters:
+                        try:
+                            file_path = parameters["file_path"]
+                            
+                            # Read the updated content from the file
+                            full_path = self.project_context.project_dir / file_path
+                            if full_path.exists():
+                                updated_content = full_path.read_text(errors='ignore')
+                                conversation_state.update_code_context(file_path, updated_content)
+                                
+                                # Also track that this file has been explored
+                                self.project_context.track_file_exploration(file_path, conversation_state)
+                        except Exception as e:
+                            if self.debug:
+                                console.print(f"[dim]Error updating code context for update_file: {str(e)}[/dim]")
 
                 # Track read file operations
                 elif action_name == "read_file" and "file_path" in parameters:
@@ -257,31 +269,6 @@ class ActionExecutor:
         Returns:
             String result from the tool execution
         """
-        # Special handling for common tools
-        if action_name == "write_file" and "file_path_content" in parameters:
-            # Handle write_file with its pipe-separated format
-            file_path_content = parameters["file_path_content"]
-            if '|' in file_path_content:
-                parts = file_path_content.split('|', 1)
-                file_path = parts[0].strip()
-                content = parts[1] if len(parts) > 1 else ""
-
-                # Create the file directly
-                full_path = self.project_context.project_dir / file_path
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                full_path.write_text(content)
-
-                # Update conversation state if provided
-                if conversation_state and hasattr(conversation_state, 'update_code_context'):
-                    conversation_state.update_code_context(file_path, content)
-
-                    # Also track parent directory as explored
-                    parent_dir = str(full_path.parent.relative_to(self.project_context.project_dir))
-                    if parent_dir:
-                        self.project_context.track_dir_exploration(parent_dir, conversation_state, recursive=False)
-
-                return f"Successfully wrote to {file_path}"
-            
         # Try multiple approaches for executing the tool
         try:
             # Method 1: Try using invoke with params dict
