@@ -26,7 +26,7 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-2. read_file: Read and analyze code files (single or multiple)
+2. read_file: Read and analyze code files (single or multiple). Read files will be added to the code context automatically.
    {
      "action": "read_file",
      "parameters": {
@@ -82,14 +82,14 @@ TASK APPROACH:
 3. Use sub-agents for focused work (they get clean context but share file knowledge)
 4. Integrate results and provide comprehensive responses
 
-FILE READING BEST PRACTICES:
+FILE READING AND EXPLORATION BEST PRACTICES:
+- Use the list_files tool to explore the project structure
 - Use single file reads when examining one specific file
 - Use multiple file reads when you need to understand related components together
 - Examples of good multiple file reads:
   * "main.py, config.py, utils.py" - to understand an application structure
   * "component.py, component.test.py" - to see implementation and tests together
   * "model.py, views.py, controller.py" - for MVC pattern understanding
-- All files read (single or multiple) are automatically added to your code context
 
 WHEN TO USE SUB-AGENTS:
 - Complex tasks that benefit from focused attention
@@ -105,7 +105,7 @@ SUB-AGENT CAPABILITIES:
 
 RULES:
 1. Handle simple tasks directly - don't over-delegate
-2. ONLY use sub-agents for complex, multi-step tasks
+2. ONLY use sub-agents for very complex tasks that benefit from focused attention and limited scope
 3. Provide clear, specific instructions when delegating
 4. Always use final_answer to end your turn
 5. Maintain context and integrate sub-agent results
@@ -195,6 +195,8 @@ FILE READING BEST PRACTICES:
 - Use multiple file reads when you need to understand related components together
 - Examples: "src/main.py, src/utils.py, tests/test_main.py" 
 - All files read are automatically added to your code context
+- DO NOT list files repeatedly - use the existing context and file system structure
+- Focus on the files relevant to your task, do not waste time exploring file structure multiple times
 
 RULES:
 1. Focus solely on the assigned task - don't expand scope
