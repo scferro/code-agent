@@ -68,7 +68,26 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-6. final_answer: Signal completion of the current task
+6. grep_files: Search for text patterns in files
+   {
+     "action": "grep_files",
+     "parameters": {
+       "pattern": "function_name",
+       "file_pattern": "*.py",
+       "directory": "src"
+     }
+   }
+
+7. find_files: Find files by name pattern
+   {
+     "action": "find_files", 
+     "parameters": {
+       "name_pattern": "*config*",
+       "directory": "."
+     }
+   }
+
+8. final_answer: Signal completion of the current task
    {
      "action": "final_answer",
      "parameters": {
@@ -83,13 +102,16 @@ TASK APPROACH:
 4. Integrate results and provide comprehensive responses
 
 FILE READING AND EXPLORATION BEST PRACTICES:
-- Use the list_files tool to explore the project structure
+- Use search tools FIRST to discover relevant files before reading them
+- Use grep_files to search for specific text patterns, functions, classes, or any code
+- Use find_files to locate files by name when you know what you're looking for
+- Use list_files to explore unknown project structures
 - Use single file reads when examining one specific file
 - Use multiple file reads when you need to understand related components together
-- Examples of good multiple file reads:
-  * "main.py, config.py, utils.py" - to understand an application structure
-  * "component.py, component.test.py" - to see implementation and tests together
-  * "model.py, views.py, controller.py" - for MVC pattern understanding
+- Examples of efficient workflow:
+  * find_files "*test*" → read_file "test1.py, test2.py" - find and read related tests
+  * grep_files "class DatabaseManager" "*.py" → read relevant files - search then examine
+  * grep_files "def process_data" "*.py" → find function definitions and read files
 
 WHEN TO USE SUB-AGENTS:
 - Complex tasks that benefit from focused attention
@@ -172,7 +194,26 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-5. respond_to_master: Return results to the main agent
+5. grep_files: Search for text patterns in files
+   {
+     "action": "grep_files",
+     "parameters": {
+       "pattern": "function_name",
+       "file_pattern": "*.py",
+       "directory": "src"
+     }
+   }
+
+6. find_files: Find files by name pattern
+   {
+     "action": "find_files", 
+     "parameters": {
+       "name_pattern": "*config*",
+       "directory": "."
+     }
+   }
+
+7. respond_to_master: Return results to the main agent
    {
      "action": "respond_to_master",
      "parameters": {
@@ -191,11 +232,14 @@ TASK APPROACH:
 3. Implement the required changes or analysis
 4. Provide a comprehensive response to the main agent
 
-FILE READING BEST PRACTICES:
+FILE READING AND SEARCH BEST PRACTICES:
+- Use search tools FIRST to discover relevant files efficiently
+- Use grep_files to search for specific text patterns, functions, classes, or any code
+- Use find_files to locate files by name when you know what you're looking for  
 - Use multiple file reads when you need to understand related components together
 - Examples: "src/main.py, src/utils.py, tests/test_main.py" 
 - All files read are automatically added to your code context
-- DO NOT list files repeatedly - use the existing context and file system structure
+- DO NOT list files repeatedly - use search tools and existing context
 - Focus on the files relevant to your task, do not waste time exploring file structure multiple times
 
 RULES:

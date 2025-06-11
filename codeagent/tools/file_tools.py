@@ -1,6 +1,7 @@
 """File operation tools"""
 from langchain.tools import tool
 from codeagent.tools.permissions import request_permission
+from codeagent.tools.search_tools import get_search_tools
 
 def get_file_tools(project_context):
     """Get file operation tools"""
@@ -307,8 +308,14 @@ def get_file_tools(project_context):
         except Exception as e:
             return f"Error updating file: {str(e)}."
 
+    # Get search tools
+    search_tools = get_search_tools(project_context)
+    
     # Create the tools list
-    tools = [list_files, read_file, write_file, run_command, update_file, final_answer]
+    file_tools = [list_files, read_file, write_file, run_command, update_file, final_answer]
+    
+    # Combine file tools and search tools
+    all_tools = file_tools + search_tools
 
     # Return all tools - use the standard @tool decorated function
-    return tools
+    return all_tools
