@@ -99,42 +99,96 @@ def get_file_tools(project_context):
 
     @tool
     def read_file(file_path):
-        """Read the contents of a file. Use this to view code."""
+        """Read the contents of a file or multiple files. For multiple files, provide a comma-separated list."""
         try:
-            full_path = project_context.project_dir / file_path
-            
-            # Check if file exists
-            if not full_path.exists():
-                return f"Error: File '{file_path}' does not exist"
+            # Handle both single file and multiple files (comma-separated)
+            if ',' in file_path:
+                # Multiple files
+                paths = [path.strip() for path in file_path.split(',')]
+                results = []
+                files_read = 0
                 
-            if not full_path.is_file():
-                return f"Error: '{file_path}' is not a file"
+                for path in paths:
+                    if not path:  # Skip empty paths
+                        continue
+                        
+                    try:
+                        full_path = project_context.project_dir / path
+                        
+                        # Check if file exists
+                        if not full_path.exists():
+                            results.append(f"❌ Error: File '{path}' does not exist")
+                            continue
+                            
+                        if not full_path.is_file():
+                            results.append(f"❌ Error: '{path}' is not a file")
+                            continue
+                            
+                        # Read file
+                        content = full_path.read_text(errors='ignore')
+                        
+                        # Get file info
+                        size_kb = full_path.stat().st_size / 1024
+                        if size_kb < 1:
+                            size_str = f"{full_path.stat().st_size} bytes"
+                        else:
+                            size_str = f"{size_kb:.1f} KB"
+                        
+                        # Get file description if available
+                        description = project_context.get_file_description(path)
+                        description_str = f" - {description}" if description else ""
+                        
+                        file_info = f"📄 {path} ({size_str}){description_str}"
+                        separator = "=" * len(file_info)
+                        
+                        results.append(f"{file_info}\n{separator}\n\n{content}\n")
+                        files_read += 1
+                        
+                    except Exception as e:
+                        results.append(f"❌ Error reading '{path}': {e}")
                 
-            # Read file
-            content = full_path.read_text(errors='ignore')
+                # Add summary at the beginning
+                summary = f"📚 Read {files_read} file(s) successfully\n{'=' * 50}\n\n"
+                
+                return summary + "\n".join(results)
             
-            # Get file description if available
-            description = project_context.get_file_description(file_path)
-            description_str = f"\nDescription: {description}" if description else ""
-            
-            # Get file info
-            file_info = f"File: {file_path}{description_str}"
-            size_kb = full_path.stat().st_size / 1024
-            if size_kb < 1:
-                size_str = f"{full_path.stat().st_size} bytes"
             else:
-                size_str = f"{size_kb:.1f} KB"
+                # Single file (original behavior)
+                full_path = project_context.project_dir / file_path
                 
-            file_info += f" ({size_str})"
-            
-            # We don't call track_file_exploration directly here anymore
-            # It's now handled by action_executor.py which passes the conversation_state correctly
-            
-            # Return formatted content
-            separator = "=" * len(file_info)
-            return f"{file_info}\n{separator}\n\n{content}"
+                # Check if file exists
+                if not full_path.exists():
+                    return f"Error: File '{file_path}' does not exist"
+                    
+                if not full_path.is_file():
+                    return f"Error: '{file_path}' is not a file"
+                    
+                # Read file
+                content = full_path.read_text(errors='ignore')
+                
+                # Get file description if available
+                description = project_context.get_file_description(file_path)
+                description_str = f"\nDescription: {description}" if description else ""
+                
+                # Get file info
+                file_info = f"File: {file_path}{description_str}"
+                size_kb = full_path.stat().st_size / 1024
+                if size_kb < 1:
+                    size_str = f"{full_path.stat().st_size} bytes"
+                else:
+                    size_str = f"{size_kb:.1f} KB"
+                    
+                file_info += f" ({size_str})"
+                
+                # We don't call track_file_exploration directly here anymore
+                # It's now handled by action_executor.py which passes the conversation_state correctly
+                
+                # Return formatted content
+                separator = "=" * len(file_info)
+                return f"{file_info}\n{separator}\n\n{content}"
+                
         except Exception as e:
-            return f"Error reading file: {e}"
+            return f"Error reading file(s): {e}"
 
     # Use the standard @tool decorator for consistency
     @tool

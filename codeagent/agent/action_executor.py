@@ -204,12 +204,32 @@ class ActionExecutor:
                     # Store the file path in the result entry so it's available in action history
                     result_entry["parameters"] = parameters
 
-                    # Update conversation state if provided
-                    if conversation_state and "result" in result_entry and not "error" in result_entry:
-                        # Extract content from the result (may need adjustment based on format)
+                    # Update conversation state if provided and operation was successful
+                    if conversation_state and "Successfully" in str(result) or (conversation_state and not any(word in str(result).lower() for word in ["error", "❌"])):
                         try:
-                            # Track that this file has been explored with conversation state
-                            self.project_context.track_file_exploration(file_path, conversation_state)
+                            # Handle both single and multiple file reads
+                            if ',' in file_path:
+                                # Multiple files - extract each file path and add to context
+                                paths = [path.strip() for path in file_path.split(',')]
+                                for path in paths:
+                                    if not path:
+                                        continue
+                                    full_path = self.project_context.project_dir / path
+                                    if full_path.exists() and full_path.is_file():
+                                        try:
+                                            content = full_path.read_text(errors='ignore')
+                                            conversation_state.update_code_context(path, content)
+                                            self.project_context.track_file_exploration(path, conversation_state)
+                                        except Exception as e:
+                                            if self.debug:
+                                                console.print(f"[dim]Error updating context for {path}: {str(e)}[/dim]")
+                            else:
+                                # Single file - track as before
+                                full_path = self.project_context.project_dir / file_path
+                                if full_path.exists() and full_path.is_file():
+                                    content = full_path.read_text(errors='ignore')
+                                    conversation_state.update_code_context(file_path, content)
+                                    self.project_context.track_file_exploration(file_path, conversation_state)
                         except Exception as e:
                             if self.debug:
                                 console.print(f"[dim]Error tracking read_file: {str(e)}[/dim]")
