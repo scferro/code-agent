@@ -6,6 +6,7 @@ A Python-based intelligent coding assistant powered by LLMs through Ollama. Code
 
 - Interactive chat interface with LLM-powered coding assistance
 - Dual-agent architecture (main + sub-agent) for complex task decomposition
+- Session-based todo list management for task tracking
 - Codebase exploration and understanding
 - File creation, reading, and modification
 - Project context management with .agent.md configuration
