@@ -272,11 +272,6 @@ def get_file_tools(project_context):
         except Exception as e:
             return f"Error executing command: {str(e)}"
 
-    @tool
-    def final_answer(message):
-        """Signal that the task is complete and end your turn."""
-        # This tool marks the task as complete and returns a final message
-        return message
 
     @tool
     def update_file(file_path, old_text, new_text):
@@ -328,7 +323,7 @@ def get_file_tools(project_context):
     search_tools = get_search_tools(project_context)
     
     # Create the tools list
-    file_tools = [list_files, read_file, write_file, run_command, update_file, final_answer]
+    file_tools = [list_files, read_file, write_file, run_command, update_file]
     
     # Combine file tools and search tools
     all_tools = file_tools + search_tools

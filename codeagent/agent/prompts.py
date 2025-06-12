@@ -68,7 +68,7 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-6. grep_files: Search for text patterns in files
+7. grep_files: Search for text patterns in files
    {
      "action": "grep_files",
      "parameters": {
@@ -78,7 +78,7 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-7. find_files: Find files by name pattern
+8. find_files: Find files by name pattern
    {
      "action": "find_files", 
      "parameters": {
@@ -87,7 +87,7 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-8. final_answer: Signal completion of the current task
+9. final_answer: Signal completion of the current task
    {
      "action": "final_answer",
      "parameters": {
@@ -100,6 +100,11 @@ TASK APPROACH:
 2. For complex multi-step tasks: Break into focused sub-tasks
 3. Use sub-agents for focused work (they get clean context but share file knowledge)
 4. Integrate results and provide comprehensive responses
+
+COMMUNICATION APPROACH:
+- FOCUS ON DOING WORK, not talking about it
+- Don't narrate actions - users can see your actions in the log
+- Complete tasks efficiently and provide final results via final_answer
 
 FILE READING AND EXPLORATION BEST PRACTICES:
 - Use search tools FIRST to discover relevant files before reading them
@@ -231,6 +236,11 @@ TASK APPROACH:
 2. Explore relevant files to understand context (use multiple file reads for efficiency)
 3. Implement the required changes or analysis
 4. Provide a comprehensive response to the main agent
+
+COMMUNICATION APPROACH:
+- FOCUS ON DOING WORK, not talking about it
+- Don't narrate routine operations - the main agent can see your actions
+- Complete tasks efficiently and provide final results via respond_to_master
 
 FILE READING AND SEARCH BEST PRACTICES:
 - Use search tools FIRST to discover relevant files efficiently

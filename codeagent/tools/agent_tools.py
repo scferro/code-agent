@@ -9,6 +9,49 @@ class AgentType(Enum):
     SUB = "sub"
 
 @tool
+def status_update(message: str) -> str:
+    """Provide occasional status updates during complex or lengthy tasks.
+    
+    Use this SPARINGLY and only when:
+    - Starting a complex multi-step task (to explain your plan)
+    - Significant progress milestone is reached
+    - Task is taking longer than expected
+    - You discover something important the user should know
+    
+    Do NOT use this to:
+    - Describe every small action you take
+    - Ask questions (use final_answer instead)
+    - Signal task completion (use final_answer instead)
+    - Narrate routine file operations
+    
+    Focus on DOING the work with other tools rather than talking about it.
+    
+    Args:
+        message: The important status update to communicate
+        
+    Returns:
+        The message that was sent to the user
+    """
+    return message
+
+@tool
+def final_answer(message: str) -> str:
+    """Signal that the task is complete and end your turn.
+    
+    Use this to:
+    - Signal task completion
+    - Ask questions or request clarification
+    - Provide final results or conclusions
+    
+    Args:
+        message: The final message to the user
+        
+    Returns:
+        The final message
+    """
+    return message
+
+@tool
 def invoke_agent(agent_type: str, prompt: str, conversation_state=None) -> str:
     """Invoke a sub-agent with a specific prompt.
     
@@ -77,6 +120,7 @@ def respond_to_master(response: str, conversation_state=None) -> str:
 def get_agent_tools():
     """Get all agent-related tools."""
     return [
+        final_answer,
         invoke_agent,
         respond_to_master
     ]

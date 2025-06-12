@@ -51,6 +51,24 @@ class ActionExecutor:
             if self.debug:
                 console.print(f"[dim]Executing action: {action_name} with parameters: {parameters}[/dim]")
 
+            # Special case for status_update action
+            if action_name == "status_update":
+                message = parameters.get("message", "")
+                console.print(f"[bold cyan]\nAgent:[/bold cyan] {message}")
+                
+                # Add the message to conversation history
+                if conversation_state:
+                    conversation_state.add_assistant_message(message)
+                
+                # Return result for this action but don't mark task as complete
+                results.append({
+                    "action": "status_update",
+                    "result": "Status update sent to user",
+                    "original_parameters": parameters,
+                    "message": message
+                })
+                continue
+            
             # Special case for final_answer action
             if action_name == "final_answer" and conversation_state:
                 message = parameters.get("message", "Task completed.")
@@ -432,6 +450,9 @@ class ActionExecutor:
 
         elif action_name == "search_code" and "query" in parameters:
             return f"Searching for '{parameters['query']}'"
+            
+        elif action_name == "status_update":
+            return "Providing status update"
             
         elif action_name == "final_answer":
             return "Ending agent turn"
