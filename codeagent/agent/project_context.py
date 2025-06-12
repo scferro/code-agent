@@ -122,6 +122,7 @@ class ProjectContext:
             recursive: Whether subdirectories should also be marked as explored
             max_depth: How many levels of subdirectories to explore when recursive is True
         """
+        # Add the directory path as-is to maintain consistency with build_directory_tree
         self.explored_dirs.add(dir_path)
 
         # If conversation state is provided, mark the directory as explored
@@ -200,6 +201,9 @@ class ProjectContext:
             node["note"] = "Max depth reached"
             return node
 
+        # Check if the current directory has been explored to determine if we should show its contents
+        show_contents = (path == "." or path in self.explored_dirs)
+
         try:
             entries = list(dir_path.iterdir())
             entries.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
@@ -212,21 +216,21 @@ class ProjectContext:
                 rel_path = str(entry.relative_to(self.project_dir))
 
                 if entry.is_dir():
-                    # Check if this directory has been explored
+                    # Always show directory, but only recurse if it's been explored
                     if rel_path in self.explored_dirs:
                         # Recursively build the tree for this directory
                         child_node = self.build_directory_tree(rel_path, depth + 1, max_depth)
                         node["children"].append(child_node)
-                    else:
-                        # Just add the directory name without details
+                    elif show_contents:
+                        # Show directory but mark as not explored
                         node["children"].append({
                             "name": entry.name,
                             "path": rel_path,
                             "type": "directory",
                             "explored": False
                         })
-                else:
-                    # Add file with basic metadata
+                elif show_contents:
+                    # Only add files if we're showing contents of this directory
                     size_kb = entry.stat().st_size / 1024
                     if size_kb < 1:
                         size_str = f"{entry.stat().st_size} bytes"

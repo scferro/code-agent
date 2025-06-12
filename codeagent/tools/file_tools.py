@@ -1,4 +1,5 @@
 """File operation tools"""
+from pathlib import Path
 from langchain.tools import tool
 from codeagent.tools.permissions import request_permission
 from codeagent.tools.search_tools import get_search_tools
@@ -25,6 +26,9 @@ def get_file_tools(project_context):
             if not dir_path.is_dir():
                 return f"Error: '{directory}' is not a directory"
 
+            # Mark the requested directory as explored
+            project_context.explored_dirs.add(directory)
+
             # Format output
             result = [f"Directory: {directory}"]
 
@@ -33,7 +37,7 @@ def get_file_tools(project_context):
             files = []
 
             # Function to recursively collect files with path depth tracking
-            def collect_items(path, current_depth=0):
+            def collect_items(path, current_depth=0, base_depth=0):
                 if current_depth > max_depth:
                     return
 
@@ -45,16 +49,17 @@ def get_file_tools(project_context):
                     items.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
 
                     for item in items:
-                        # Calculate relative path from project root
-                        rel_path = item.relative_to(project_context.project_dir)
-
                         if item.is_dir():
                             # Skip hidden directories
                             if item.name.startswith("."):
                                 continue
 
-                            # Add directory to list
-                            indent = "  " * current_depth
+                            # Calculate relative path from project root
+                            rel_path = item.relative_to(project_context.project_dir)
+                            
+                            # Add directory to list with proper depth
+                            display_depth = current_depth - base_depth
+                            indent = "  " * display_depth
                             directories.append(f"{indent}📁 {rel_path}/")
 
                             # Mark this directory as explored in the project context
@@ -62,11 +67,14 @@ def get_file_tools(project_context):
 
                             # Recursively process subdirectory if recursive flag is set
                             if recursive:
-                                collect_items(item, current_depth + 1)
+                                collect_items(item, current_depth + 1, base_depth)
                         else:
                             # Skip hidden files
                             if item.name.startswith("."):
                                 continue
+
+                            # Calculate relative path from project root
+                            rel_path = item.relative_to(project_context.project_dir)
 
                             # Add file size
                             size_kb = item.stat().st_size / 1024
@@ -75,14 +83,22 @@ def get_file_tools(project_context):
                             else:
                                 size_str = f"{size_kb:.1f} KB"
 
-                            # Add indent based on depth
-                            indent = "  " * current_depth
+                            # Add indent based on depth relative to listing root
+                            display_depth = current_depth - base_depth
+                            indent = "  " * display_depth
                             files.append(f"{indent}📄 {rel_path} ({size_str})")
                 except Exception as e:
                     files.append(f"Error accessing {path}: {str(e)}")
 
-            # Start collection from the root directory
-            collect_items(dir_path)
+            # Calculate the base depth (how deep the requested directory is)
+            if directory == ".":
+                base_depth = 0
+            else:
+                # Count path components to determine starting depth
+                base_depth = len([p for p in Path(directory).parts if p != "."])
+
+            # Start collection from the requested directory
+            collect_items(dir_path, base_depth, base_depth)
 
             # Add counts and items to result
             result.append(f"\nDirectories ({len(directories)}):")

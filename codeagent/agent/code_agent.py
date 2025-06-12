@@ -66,6 +66,14 @@ class CodeAgent:
             num_ctx=32768,
             cache=False
         )
+        
+        # Initialize context manager after LLM is set up
+        from codeagent.agent.context_manager import ContextManager
+        self.context_manager = ContextManager(
+            self.conversation_state, 
+            self.project_context, 
+            self.llm
+        )
             
         # Create a tool map for easy lookup
         self.tool_map = {}
@@ -159,7 +167,12 @@ class CodeAgent:
                 # Build code context - both agents get full file contents
                 code_context = "\n\n=== CODE CONTEXT ===\n"
                 code_context += get_code_prompt()
-                code_context += self.conversation_state.get_code_context_string()
+                
+                # Use smart context if available, fallback to legacy
+                if hasattr(self.conversation_state, 'context_manager') and self.conversation_state.context_manager:
+                    code_context += self.conversation_state.context_manager.build_smart_context_string()
+                else:
+                    code_context += self.conversation_state.get_code_context_string()
 
                 # Format action history without showing results
                 action_history = "\n\n=== ACTION HISTORY ===\n"

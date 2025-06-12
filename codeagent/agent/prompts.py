@@ -264,9 +264,12 @@ Use this context to understand the project structure without repeatedly listing 
 
 def get_code_prompt() -> str:
     """Get the main system prompt"""
-    code_prompt = """This section contains the content of files that have been read or written during the conversation.
-Each file is shown with its path and full content, allowing you to reference code from previous actions.
-Use this context to access file contents without repeatedly reading the same files.
+    code_prompt = """This section contains smartly managed file contents organized for efficient context usage:
+
+ACTIVE FILES: Recently accessed files with full content (use these for detailed work)
+EXPLORED FILES: Previously seen files with summaries only (reference for quick understanding)
+
+Context is automatically managed to stay within limits. Files move from active to explored when space is needed.
 """
     return code_prompt
 

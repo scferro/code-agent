@@ -157,11 +157,15 @@ class ActionExecutor:
                 result_entry = {
                     "action": action_name,
                     "result": result,
-                    "parameters": parameters  # Store parameters for all actions by default
+                    "parameters": parameters,  # Store parameters for all actions by default
+                    "success": self._is_successful_result(result, action_name)  # Proper success detection
                 }
                 
-                # Update code context for successful file write/edit operations
-                if conversation_state and "Successfully" in str(result):
+                # Check success directly from result (fix the ordering issue)
+                is_successful = self._is_successful_result(result, action_name)
+                
+                # Update context for successful operations
+                if conversation_state and is_successful:
                     if action_name == "write_file" and "file_path_content" in parameters:
                         try:
                             file_path_content = parameters["file_path_content"]
@@ -173,7 +177,13 @@ class ActionExecutor:
                                 full_path = self.project_context.project_dir / file_path
                                 if full_path.exists():
                                     actual_content = full_path.read_text(errors='ignore')
-                                    conversation_state.update_code_context(file_path, actual_content)
+                                    
+                                    # Use smart context management if available
+                                    if hasattr(conversation_state, 'context_manager') and conversation_state.context_manager:
+                                        conversation_state.context_manager.update_file_context(file_path, actual_content, 'write')
+                                    else:
+                                        # Fallback to legacy context
+                                        conversation_state.update_code_context(file_path, actual_content)
                                     
                                     # Also track that this file has been explored
                                     self.project_context.track_file_exploration(file_path, conversation_state)
@@ -189,7 +199,13 @@ class ActionExecutor:
                             full_path = self.project_context.project_dir / file_path
                             if full_path.exists():
                                 updated_content = full_path.read_text(errors='ignore')
-                                conversation_state.update_code_context(file_path, updated_content)
+                                
+                                # Use smart context management if available
+                                if hasattr(conversation_state, 'context_manager') and conversation_state.context_manager:
+                                    conversation_state.context_manager.update_file_context(file_path, updated_content, 'edit')
+                                else:
+                                    # Fallback to legacy context
+                                    conversation_state.update_code_context(file_path, updated_content)
                                 
                                 # Also track that this file has been explored
                                 self.project_context.track_file_exploration(file_path, conversation_state)
@@ -197,29 +213,57 @@ class ActionExecutor:
                             if self.debug:
                                 console.print(f"[dim]Error updating code context for update_file: {str(e)}[/dim]")
 
-                # Track read file operations
-                elif action_name == "read_file" and "file_path" in parameters:
-                    file_path = parameters["file_path"]
-
-                    # Store the file path in the result entry so it's available in action history
-                    result_entry["parameters"] = parameters
-
-                    # Update conversation state if provided (original simple logic)
-                    if conversation_state and "result" in result_entry and not "error" in result_entry:
-                        # Extract content from the result (may need adjustment based on format)
+                    # Track read file operations
+                    elif action_name == "read_file" and "file_path" in parameters:
+                        file_path = parameters["file_path"]
+                        
+                        # Handle both single and multiple file reads
                         try:
                             # Handle both single and multiple file reads
                             if ',' in file_path:
-                                # Multiple files - extract each file path and add to context
+                                # Multiple files - process each one
                                 paths = [path.strip() for path in file_path.split(',')]
                                 for path in paths:
                                     if not path:
                                         continue
-                                    # Track that this file has been explored with conversation state
-                                    self.project_context.track_file_exploration(path, conversation_state)
+                                    
+                                    # Read the file content for smart context management
+                                    try:
+                                        full_path = self.project_context.project_dir / path
+                                        if full_path.exists():
+                                            content = full_path.read_text(errors='ignore')
+                                            
+                                            # Use smart context management if available
+                                            if hasattr(conversation_state, 'context_manager') and conversation_state.context_manager:
+                                                conversation_state.context_manager.update_file_context(path, content, 'read')
+                                            else:
+                                                # Fallback to legacy context
+                                                conversation_state.update_code_context(path, content)
+                                            
+                                            # Track that this file has been explored
+                                            self.project_context.track_file_exploration(path, conversation_state)
+                                    except Exception as e:
+                                        if self.debug:
+                                            console.print(f"[dim]Error processing file {path}: {str(e)}[/dim]")
                             else:
-                                # Single file - track as before (original working logic)
-                                self.project_context.track_file_exploration(file_path, conversation_state)
+                                # Single file
+                                try:
+                                    full_path = self.project_context.project_dir / file_path
+                                    if full_path.exists():
+                                        content = full_path.read_text(errors='ignore')
+                                        
+                                        # Use smart context management if available
+                                        if hasattr(conversation_state, 'context_manager') and conversation_state.context_manager:
+                                            conversation_state.context_manager.update_file_context(file_path, content, 'read')
+                                        else:
+                                            # Fallback to legacy context
+                                            conversation_state.update_code_context(file_path, content)
+                                        
+                                        # Track that this file has been explored
+                                        self.project_context.track_file_exploration(file_path, conversation_state)
+                                except Exception as e:
+                                    if self.debug:
+                                        console.print(f"[dim]Error processing file {file_path}: {str(e)}[/dim]")
                         except Exception as e:
                             if self.debug:
                                 console.print(f"[dim]Error tracking read_file: {str(e)}[/dim]")
@@ -233,8 +277,11 @@ class ActionExecutor:
                     # Store the parameters in the result entry so they're available in action history
                     result_entry["parameters"] = parameters
 
-                    # Update conversation state if provided
-                    if conversation_state and "result" in result_entry and not "error" in result_entry:
+                    # Check success directly from result (fix the ordering issue)
+                    is_successful = self._is_successful_result(result, action_name)
+                    
+                    # Update conversation state if provided and successful
+                    if conversation_state and is_successful:
                         try:
                             # Track that this directory has been explored with conversation state
                             self.project_context.track_dir_exploration(
@@ -314,6 +361,50 @@ class ActionExecutor:
                         
                 except Exception as e3:
                     raise Exception(f"All execution methods failed: {str(e3)}")
+    
+    def _is_successful_result(self, result: Any, action_name: str) -> bool:
+        """Determine if an action result indicates success.
+        
+        Args:
+            result: The result from the tool execution
+            action_name: The name of the action
+            
+        Returns:
+            True if the result indicates success, False otherwise
+        """
+        if not isinstance(result, str):
+            return True  # Assume non-string results are successful
+        
+        # Check for common error patterns
+        error_indicators = [
+            "Error:", "error:", "ERROR:",
+            "Failed:", "failed:", "FAILED:",
+            "Permission denied:",
+            "does not exist",
+            "is not a file",
+            "is not a directory"
+        ]
+        
+        for indicator in error_indicators:
+            if indicator in result:
+                return False
+        
+        # Special cases for specific actions
+        if action_name == "read_file":
+            # For read_file, success is indicated by content being returned
+            # Check for the file info format or multi-file summary
+            return ("📚 Read" in result or "File:" in result or "===" in result)
+        
+        elif action_name in ["write_file", "update_file"]:
+            # For write/update operations, look for success message
+            return "Successfully" in result
+        
+        elif action_name == "list_files":
+            # For list_files, success is having directory content or empty directory
+            return "Directory:" in result
+        
+        # Default: assume success if no error indicators found
+        return True
     
     def _get_action_summary(self, action_name: str, parameters: Dict[str, Any]) -> str:
         """Generate a user-friendly summary of the action being performed.
