@@ -122,7 +122,7 @@ class ActionExecutor:
                 # Return result for this action
                 results.append({
                     "action": "respond_to_master",
-                    "result": f"Returned to main agent with response from {current_agent.value} agent",
+                    "result": f"Sub-agent completed task and returned:\n\n{response}",
                     "parameters": parameters
                 })
                 continue

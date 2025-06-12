@@ -141,15 +141,7 @@ class CodeAgent:
                     content = msg["content"]
                     conversation_history += f"{role.upper()}: {content}\n"
                 
-                # For the main agent, include results from sub-agents in the conversation context
-                subagent_results = ""
-                if self.agent_type == AgentTypeEnum.MAIN:
-                    subagent_results = "\n\n=== SUB-AGENT RESULTS ===\n"
-                    result = self.conversation_state.get_task_data("sub_result")
-                    if result:
-                        subagent_results += f"--- SUB-AGENT RESULT ---\n{result}\n\n"
-                    else:
-                        subagent_results = ""
+                # Sub-agent results are now handled in PREVIOUS ACTION RESULT section
                 
                 # For sub-agents, include their specific prompt
                 subagent_prompt = ""
@@ -251,9 +243,7 @@ class CodeAgent:
                         f"{latest_action_result}\n"
                     )
                     
-                # Add sub-agent specific components
-                if subagent_results:
-                    comprehensive_prompt += f"\n{subagent_results}"
+                # Sub-agent results are now included in PREVIOUS ACTION RESULT section
 
                 # Save the comprehensive message for debugging
                 debug_file = Path(__file__).parent.parent / "last_message.txt"
