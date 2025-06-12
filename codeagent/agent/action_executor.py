@@ -171,6 +171,17 @@ class ActionExecutor:
                 # Execute the tool based on its type and parameters
                 result = self._execute_tool(tool, action_name, parameters, conversation_state)
                 
+                # Special handling for manage_todos responses
+                if action_name == "manage_todos" and conversation_state:
+                    if result.startswith("MANAGE_TODOS:CLEAR"):
+                        conversation_state.update_todo_list([])
+                        result = "Todo list cleared"
+                    elif result.startswith("MANAGE_TODOS:UPDATE:"):
+                        todo_data = result[len("MANAGE_TODOS:UPDATE:"):]
+                        todo_lines = todo_data.split(';') if todo_data else []
+                        conversation_state.update_todo_list(todo_lines)
+                        result = f"Updated todo list with {len(todo_lines)} items"
+                
                 # Add the result to the results list
                 result_entry = {
                     "action": action_name,
@@ -344,6 +355,7 @@ class ActionExecutor:
         Returns:
             String result from the tool execution
         """
+        
         # Try multiple approaches for executing the tool
         try:
             # Method 1: Try using invoke with params dict

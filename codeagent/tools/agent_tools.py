@@ -117,10 +117,43 @@ def respond_to_master(response: str, conversation_state=None) -> str:
     # Return a confirmation message
     return f"Returned to main agent with response from {current_agent.value} agent."
 
+@tool
+def manage_todos(todos_data: str) -> str:
+    """Manage the session todo list for task tracking.
+    
+    Provide todo items separated by semicolons. Tasks are automatically marked as pending (☐).
+    
+    Example format:
+    "First task; Second task; Third task"
+    
+    Args:
+        todos_data: Todo list as semicolon-separated plain text tasks
+        
+    Returns:
+        Special formatted response for todo processing
+    """
+    try:
+        if not todos_data.strip():
+            return "MANAGE_TODOS:CLEAR"
+        
+        # Split by semicolons and format as pending tasks
+        todo_lines = []
+        for item in todos_data.strip().split(';'):
+            item = item.strip()
+            if item:
+                todo_lines.append(f"☐ {item}")
+        
+        # Return special format that action executor will recognize
+        return f"MANAGE_TODOS:UPDATE:{';'.join(todo_lines)}"
+            
+    except Exception as e:
+        return f"Error managing todos: {str(e)}"
+
 def get_agent_tools():
     """Get all agent-related tools."""
     return [
         final_answer,
         invoke_agent,
-        respond_to_master
+        respond_to_master,
+        manage_todos
     ]

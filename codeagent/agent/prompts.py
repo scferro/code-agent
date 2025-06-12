@@ -87,7 +87,15 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-9. final_answer: Signal completion of the current task
+9. manage_todos: Manage task list for session tracking (can include as many tasks as needed)
+   {
+     "action": "manage_todos",
+     "parameters": {
+       "todos_data": "First task; Second task; Third task; Fourth task; Fifth task; etc."
+     }
+   }
+
+10. final_answer: Signal completion of the current task
    {
      "action": "final_answer",
      "parameters": {
@@ -218,7 +226,15 @@ AVAILABLE TOOLS WITH EXAMPLE IMPLEMENTATION:
      }
    }
 
-7. respond_to_master: Return results to the main agent
+7. manage_todos: Manage task list for session tracking (can include as many tasks as needed)
+   {
+     "action": "manage_todos",
+     "parameters": {
+       "todos_data": "First task; Second task; Third task; Fourth task; Fifth task; etc."
+     }
+   }
+
+8. respond_to_master: Return results to the main agent
    {
      "action": "respond_to_master",
      "parameters": {

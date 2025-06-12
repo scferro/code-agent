@@ -166,6 +166,10 @@ class CodeAgent:
                 else:
                     code_context += self.conversation_state.get_code_context_string()
 
+                # Build todo context
+                todo_context = "\n\n=== TODO LIST ===\n"
+                todo_context += self.conversation_state.get_todo_list_string()
+
                 # Format action history without showing results
                 action_history = "\n\n=== ACTION HISTORY ===\n"
                 action_history += get_action_hist_prompt()
@@ -229,6 +233,7 @@ class CodeAgent:
                         f"{system_prompt}\n\n"
                         f"{file_system_context}\n\n"
                         f"{code_context}\n\n"
+                        f"{todo_context}\n\n"
                         f"{action_history}\n"
                         f"{latest_action_result}\n"
                         f"{conversation_history}"
@@ -238,6 +243,7 @@ class CodeAgent:
                         f"{system_prompt}\n\n"
                         f"{file_system_context}\n\n"
                         f"{code_context}\n\n"
+                        f"{todo_context}\n\n"
                         f"{subagent_prompt}\n"
                         f"{action_history}\n"
                         f"{latest_action_result}\n"

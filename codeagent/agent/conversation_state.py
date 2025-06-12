@@ -95,6 +95,9 @@ class ConversationState:
     forgotten_files: Set[str] = field(default_factory=set)
     context_manager: Optional[Any] = None  # Will be set to ContextManager instance
     
+    # Todo list for task management (simple string format like Claude Code)
+    todo_list: List[str] = field(default_factory=list)
+    
     def add_user_message(self, message: str) -> None:
         """Add a user message to the history.
         
@@ -514,3 +517,22 @@ class ConversationState:
                 total_size += len(file_info.summary.encode('utf-8'))
         
         self.context_size_bytes = total_size
+    
+    def update_todo_list(self, todo_list: List[str]) -> None:
+        """Update the todo list with new todos.
+        
+        Args:
+            todo_list: List of todo strings in Claude Code format (☐/☒ bullets)
+        """
+        self.todo_list = todo_list
+    
+    def get_todo_list_string(self) -> str:
+        """Get todo list as a formatted string for the prompt.
+        
+        Returns:
+            A formatted string representation of the todo list
+        """
+        if not self.todo_list:
+            return "No todos currently tracked."
+        
+        return "\n".join(self.todo_list)
