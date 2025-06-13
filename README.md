@@ -214,16 +214,7 @@ Edit the generated `.agent.md` file to include:
 - Code style guidelines
 - Common commands
 - Key file descriptions
-
-### Permission System
-
-Code Agent includes a security-focused permission system:
-- **Session permissions**: Valid for current session only
-- **Project permissions**: Saved in `.codeagent/permissions.json` (7 days)
-- **Global permissions**: Saved in `~/.codeagent/permissions.json` (30 days)
-
-You'll be prompted to grant permissions for file operations and can choose the appropriate scope.
-
+  
 ### Verbose and Debug Modes
 
 Enable verbose mode for additional information about the model output:
